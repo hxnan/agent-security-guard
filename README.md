@@ -107,6 +107,7 @@ git diff -- schemas/v1
 - [`docs/overall_technical_solution.md`](docs/overall_technical_solution.md)：总体技术方案。
 - [`docs/work_plan.md`](docs/work_plan.md)：分阶段工作计划与验收门槛。
 - [`docs/risk_taxonomy_v1.md`](docs/risk_taxonomy_v1.md)：风险分类 V1。
+- [`docs/annotation_guideline_v1.md`](docs/annotation_guideline_v1.md)：类别、决策、严重度、置信度、证据和复核的人工标注规范 V1。
 
 ## 近期路线
 
