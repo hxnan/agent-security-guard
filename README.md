@@ -104,6 +104,37 @@ git diff -- schemas/v1
 python scripts/validate_eval_blueprint.py
 ```
 
+## 最小 QLoRA 训练闭环
+
+仓库提供一个独立于 Eval V1 的工程 smoke 训练闭环，用于验证 6GB GPU 上的数据生成、4-bit NF4 QLoRA、Adapter 保存和加载推理。它不代表正式训练数据或模型质量达到 P5 门槛。
+
+请保留当前已经验证的 CUDA Torch，不要用 `requirements-train-smoke.txt` 覆盖它。只补装训练新增依赖：
+
+```bash
+python -m pip install peft==0.20.0 bitsandbytes==0.49.2
+python -m pip check
+```
+
+生成独立的 96/24 smoke 数据并检查训练环境：
+
+```bash
+python scripts/generate_smoke_data.py --force
+python scripts/check_training_environment.py
+```
+
+执行一个 epoch，并加载 Adapter 做一次结构化推理检查：
+
+```bash
+python scripts/train_smoke_qlora.py
+python scripts/smoke_test_adapter.py
+```
+
+本地产物位于 `data/generated/smoke-v1/` 和 `artifacts/smoke-qlora-v1/`，两者均被 Git 忽略。若 6GB 显存发生 OOM，按脚本提示改用：
+
+```bash
+python scripts/train_smoke_qlora.py --max-length 256 --lora-target attention --overwrite-output
+```
+
 ## 目录
 
 - `guard/`：稳定数据契约、风险分类和运行环境检查。
@@ -121,6 +152,7 @@ python scripts/validate_eval_blueprint.py
 - [`docs/risk_taxonomy_v1.md`](docs/risk_taxonomy_v1.md)：风险分类 V1。
 - [`docs/annotation_guideline_v1.md`](docs/annotation_guideline_v1.md)：类别、决策、严重度、置信度、证据和复核的人工标注规范 V1。
 - [`docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md`](docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md)：100 条 Eval V1 样本蓝图的配额与验收设计。
+- [`docs/superpowers/specs/2026-08-13-minimal-qlora-smoke-design.md`](docs/superpowers/specs/2026-08-13-minimal-qlora-smoke-design.md)：最小 QLoRA 工程 smoke 闭环及其非质量里程碑边界。
 
 ## 近期路线
 

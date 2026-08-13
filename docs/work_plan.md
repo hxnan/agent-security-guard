@@ -66,6 +66,11 @@ python scripts/check_environment.py
 - [ ] 实现 JSONL 校验器和数据统计脚本。
 - [ ] 人工逐条复核标签与摘要，冻结 `eval-v1`。
 
+### 跨阶段工程验证
+
+- [x] 准备独立 smoke 数据、6GB QLoRA 脚本、训练门禁和 Adapter 推理检查。
+- [ ] 在目标 GPU 完成最小训练与 Adapter 推理；该项只验证工程链路，不替代 P1、P2、P4 或 P5 验收。
+
 ### P1 验收条件
 
 - 100 条样本唯一且 Schema 合规率 100%。

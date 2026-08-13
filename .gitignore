@@ -45,3 +45,6 @@ data/generated/
 artifacts/
 runs/
 wandb/
+
+# Local isolated development worktrees
+.worktrees/
