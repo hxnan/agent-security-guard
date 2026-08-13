@@ -21,26 +21,30 @@ from guard.training_config import (
 )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def parse_config(argv: Sequence[str] | None = None) -> SmokeTrainingConfig:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-path", type=Path)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument("--num-train-epochs", type=float, default=1.0)
     parser.add_argument("--lora-target", choices=("all-linear", "attention"), default="all-linear")
     parser.add_argument("--overwrite-output", action="store_true")
     args = parser.parse_args(argv)
+    return SmokeTrainingConfig(
+        model_path=args.model_path,
+        data_dir=args.data_dir,
+        output_dir=args.output_dir,
+        max_length=args.max_length,
+        num_train_epochs=args.num_train_epochs,
+        lora_target=args.lora_target,
+        overwrite_output=args.overwrite_output,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
     try:
-        result = train_smoke(
-            SmokeTrainingConfig(
-                model_path=args.model_path,
-                data_dir=args.data_dir,
-                output_dir=args.output_dir,
-                max_length=args.max_length,
-                lora_target=args.lora_target,
-                overwrite_output=args.overwrite_output,
-            )
-        )
+        result = train_smoke(parse_config(argv))
     except (
         QloraError,
         SmokeDataError,

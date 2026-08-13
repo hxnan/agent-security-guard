@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import importlib.metadata
+import math
 import os
 from pathlib import Path
 from typing import Callable, Mapping
@@ -55,8 +56,9 @@ class SmokeTrainingConfig:
             "gradient_accumulation_steps",
             "learning_rate",
         ):
-            if getattr(self, field) <= 0:
-                raise TrainingConfigError(f"{field} must be positive")
+            value = getattr(self, field)
+            if not math.isfinite(value) or value <= 0:
+                raise TrainingConfigError(f"{field} must be finite and positive")
         if self.lora_target not in {"all-linear", "attention"}:
             raise TrainingConfigError("lora_target must be 'all-linear' or 'attention'")
         if self.seed < 0:

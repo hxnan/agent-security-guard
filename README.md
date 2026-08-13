@@ -132,6 +132,14 @@ python scripts/train_smoke_qlora.py
 python scripts/smoke_test_adapter.py
 ```
 
+若一个 epoch 只学会输出 JSON、但尚未稳定遵循 GuardResult V1，可保持其他配置不变，
+用三个 epoch 进行单变量诊断重试：
+
+```bash
+python scripts/train_smoke_qlora.py --num-train-epochs 3 --overwrite-output
+python scripts/smoke_test_adapter.py
+```
+
 本地产物位于 `data/generated/smoke-v1/` 和 `artifacts/smoke-qlora-v1/`，两者均被 Git 忽略。若 6GB 显存发生 OOM，按脚本提示改用：
 
 ```bash

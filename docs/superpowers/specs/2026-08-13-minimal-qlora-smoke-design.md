@@ -114,3 +114,24 @@ Category correctness is reported but not required for the engineering smoke pass
 - Adapter and both manifest/metrics files are produced.
 - Adapter smoke inference produces a schema-valid GuardResult.
 - `git status` remains clean except for ignored local artifacts.
+
+## 12. Diagnostic epoch retry
+
+The first target-GPU run completed one epoch in 59 seconds with 12 optimizer
+steps, `train_loss=1.336`, `eval_loss=0.666`, and 2539 MB peak allocated GPU
+memory. Adapter inference produced valid JSON but reused an unrelated event
+schema instead of GuardResult V1. This proves the training and Adapter loading
+path while failing the final schema-valid generation criterion.
+
+Test insufficient optimization steps as a single-variable hypothesis. Add a
+`--num-train-epochs` CLI option that populates the existing positive
+`SmokeTrainingConfig.num_train_epochs` field. Keep the default at one epoch and
+do not change the data, prompt, LoRA parameters, learning rate, generation, or
+validation logic. The diagnostic retry explicitly uses three epochs and
+`--overwrite-output`, producing 36 optimizer steps while preserving the prior
+artifacts in the existing timestamped backup directory.
+
+The retry succeeds only if Adapter smoke inference produces a schema-valid
+GuardResult. If it still emits another schema, reject the insufficient-steps
+hypothesis and separately design an explicit GuardResult prompt constraint;
+do not combine that prompt change with this experiment.
