@@ -21,7 +21,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = REPOSITORY_ROOT / "data" / "generated" / "smoke-v1"
 DEFAULT_OUTPUT_DIR = REPOSITORY_ROOT / "artifacts" / "smoke-qlora-v1"
 MINIMUM_GPU_MEMORY_BYTES = int(5.5 * 1024**3)
-MINIMUM_FREE_GPU_MEMORY_BYTES = 5 * 1024**3
+MINIMUM_FREE_GPU_MEMORY_BYTES = int(4.75 * 1024**3)
 EXPECTED_PACKAGE_VERSIONS = {
     "accelerate": "1.14.0",
     "bitsandbytes": "0.49.2",
@@ -169,8 +169,8 @@ def assert_training_ready(report: Mapping[str, object]) -> None:
         errors.append("GPU BF16 support is unavailable")
     if float(report.get("gpu_memory_gb") or 0) < 5.5:
         errors.append("GPU must provide at least 5.5 GB memory")
-    if float(report.get("gpu_free_memory_gb") or 0) < 5.0:
-        errors.append("GPU must provide at least 5.0 GB free GPU memory")
+    if float(report.get("gpu_free_memory_gb") or 0) < 4.75:
+        errors.append("GPU must provide at least 4.75 GB free GPU memory")
     if errors:
         raise TrainingEnvironmentError(
             "training environment is not ready:\n- " + "\n- ".join(errors)

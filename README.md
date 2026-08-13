@@ -122,6 +122,9 @@ python scripts/generate_smoke_data.py --force
 python scripts/check_training_environment.py
 ```
 
+训练门禁要求至少 5.5 GiB 总显存和 4.75 GiB CUDA 可用显存；后者已计入
+Windows/WSL2 下训练进程自身的 CUDA 上下文开销。
+
 执行一个 epoch，并加载 Adapter 做一次结构化推理检查：
 
 ```bash

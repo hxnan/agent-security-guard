@@ -91,14 +91,14 @@ class TrainingEnvironmentTests(unittest.TestCase):
                     "bf16_supported": True,
                     "gpu_name": "Test Ada GPU",
                     "total_memory_bytes": 6 * 1024**3,
-                    "free_memory_bytes": int(5.75 * 1024**3),
+                    "free_memory_bytes": int(4.956 * 1024**3),
                 },
             )
 
         self.assertTrue(report["ready"])
         self.assertEqual(report["package_mismatches"], [])
         self.assertEqual(report["gpu_memory_gb"], 6.0)
-        self.assertEqual(report["gpu_free_memory_gb"], 5.75)
+        self.assertEqual(report["gpu_free_memory_gb"], 4.96)
         self.assertEqual(report["missing_model_files"], [])
         self.assertEqual(report["missing_data_files"], [])
         api.assert_training_ready(report)
