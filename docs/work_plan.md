@@ -69,7 +69,7 @@ python scripts/check_environment.py
 ### 跨阶段工程验证
 
 - [x] 准备独立 smoke 数据、6GB QLoRA 脚本、训练门禁和 Adapter 推理检查。
-- [ ] 在目标 GPU 完成最小训练与 Adapter 推理；该项只验证工程链路，不替代 P1、P2、P4 或 P5 验收。
+- [x] 在目标 GPU 完成最小训练与 Adapter 推理；3 epoch、36 次更新、峰值显存 2735.78 MB，生成结果通过 GuardResult V1 Schema。该项只验证工程链路，不替代 P1、P2、P4 或 P5 验收。
 
 ### P1 验收条件
 

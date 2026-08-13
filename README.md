@@ -12,7 +12,7 @@
 - 提供本地模型文件与 CUDA 环境检查。
 - 单元测试和 GitHub Actions 不依赖模型权重或 GPU。
 
-本阶段**不会执行待检测命令**，也尚未实现真实模型推理。
+本阶段**不会执行待检测命令**；已经验证本地 QLoRA Adapter 的训练和单样本推理链路，尚未实现生产级推理器或质量评估。
 
 ## 快速开始
 
@@ -148,6 +148,11 @@ python scripts/smoke_test_adapter.py
 ```bash
 python scripts/train_smoke_qlora.py --max-length 256 --lora-target attention --overwrite-output
 ```
+
+目标 RTX 1000 Ada 6GB 的已验证工程结果：3 epoch、36 次参数更新，训练约 173 秒，
+`train_loss=0.269`、`eval_loss=0.058`、训练峰值显存 2735.78 MB；Adapter
+重新加载后生成了 Schema 合法的 GuardResult V1。该样本类别预测未命中金标，因此这些
+数值只证明工程闭环可运行，不表示分类质量达标。
 
 ## 目录
 
