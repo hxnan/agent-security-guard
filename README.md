@@ -93,9 +93,21 @@ python scripts/export_schemas.py
 git diff -- schemas/v1
 ```
 
+## Eval V1 样本蓝图
+
+首版评估集的 100 条场景规划位于
+[`data/eval-v1/blueprint.jsonl`](data/eval-v1/blueprint.jsonl)。它固定工具类型、正常/危险/边界/注入配额和风险类别覆盖，但尚不包含最终命令与人工金标。
+
+验证结构、唯一性和所有固定配额：
+
+```bash
+python scripts/validate_eval_blueprint.py
+```
+
 ## 目录
 
 - `guard/`：稳定数据契约、风险分类和运行环境检查。
+- `data/`：版本化评估数据与样本规划；不存放模型权重。
 - `docs/`：风险标准、标注规范与设计文档。
 - `scripts/`：开发和运行入口。
 - `schemas/`：语言无关的 V1 请求/结果契约。
@@ -108,6 +120,7 @@ git diff -- schemas/v1
 - [`docs/work_plan.md`](docs/work_plan.md)：分阶段工作计划与验收门槛。
 - [`docs/risk_taxonomy_v1.md`](docs/risk_taxonomy_v1.md)：风险分类 V1。
 - [`docs/annotation_guideline_v1.md`](docs/annotation_guideline_v1.md)：类别、决策、严重度、置信度、证据和复核的人工标注规范 V1。
+- [`docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md`](docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md)：100 条 Eval V1 样本蓝图的配额与验收设计。
 
 ## 近期路线
 

@@ -61,8 +61,8 @@ python scripts/check_environment.py
 
 - [x] 将 Pydantic 契约导出为版本化 JSON Schema。
 - [x] 编写标注规范，明确主类别选择、三态决策和歧义处理。
-- [ ] 设计 100 条样本清单：Shell 30、PowerShell 20、CMD 10、Python 30、混合脚本 10。
-- [ ] 每种语言同时覆盖危险、正常、边界和注入样本。
+- [x] 设计 100 条样本清单：Shell 30、PowerShell 20、CMD 10、Python 30、混合脚本 10。
+- [x] 每种语言同时覆盖危险、正常、边界和注入样本。
 - [ ] 实现 JSONL 校验器和数据统计脚本。
 - [ ] 人工逐条复核标签与摘要，冻结 `eval-v1`。
 
