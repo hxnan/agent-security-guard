@@ -135,3 +135,38 @@ The retry succeeds only if Adapter smoke inference produces a schema-valid
 GuardResult. If it still emits another schema, reject the insufficient-steps
 hypothesis and separately design an explicit GuardResult prompt constraint;
 do not combine that prompt change with this experiment.
+
+## 13. Explicit GuardResult prompt contract
+
+The three-epoch diagnostic completed 36 optimizer steps with
+`train_loss=0.495`, `eval_loss=0.094`, and the same 2539 MB peak allocated GPU
+memory. The generated object learned all required GuardResult fields, versions,
+and collection shapes, but invented category `network_access`. The current
+system prompt names GuardResult V1 without defining its fields or enums, so the
+model cannot infer that `network_access` is outside the contract.
+
+Add one deterministic contract sentence to the shared `SYSTEM_PROMPT` used by
+both training and inference. It must list these required keys:
+`schema_version`, `risk`, `decision`, `severity`, `category`, `summary`,
+`confidence`, `evidence`, `rule_hits`, `model_version`, and `policy_version`.
+It must also list the exact legal enums:
+
+- `decision`: `allow`, `review`, `block`;
+- `severity`: `none`, `low`, `medium`, `high`, `critical`;
+- `category`: `remote_execution`, `privilege_escalation`,
+  `destructive_operation`, `credential_access`, `data_exfiltration`,
+  `persistence`, `defense_evasion`, `unsafe_download`, `network_change`,
+  `sensitive_write`, `resource_abuse`, `benign`.
+
+Keep the prompt compact and forbid extra keys, Markdown, or explanatory text.
+Define the prompt contract from the existing enum classes rather than a second
+manually maintained enum source, while preserving deterministic ordering. Add
+CPU regression tests proving every runtime enum value appears in the prompt,
+all required keys are named, and the training and inference paths still consume
+the same `SYSTEM_PROMPT` through `format_training_messages()`.
+
+The third target-GPU run changes only this prompt and uses the already supported
+three epochs. Data, LoRA parameters, learning rate, generation settings, and
+validation logic remain fixed. It passes the engineering smoke criterion when
+the generated object validates as GuardResult V1. Category correctness remains
+reported but is not a quality gate for this synthetic engineering run.

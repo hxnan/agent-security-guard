@@ -108,6 +108,9 @@ python scripts/validate_eval_blueprint.py
 
 仓库提供一个独立于 Eval V1 的工程 smoke 训练闭环，用于验证 6GB GPU 上的数据生成、4-bit NF4 QLoRA、Adapter 保存和加载推理。它不代表正式训练数据或模型质量达到 P5 门槛。
 
+训练与推理共用同一个系统提示，其中显式列出 GuardResult V1 的必需字段以及
+`decision`、`severity`、`category` 的全部合法值，避免模型生成契约外枚举。
+
 请保留当前已经验证的 CUDA Torch，不要用 `requirements-train-smoke.txt` 覆盖它。只补装训练新增依赖：
 
 ```bash

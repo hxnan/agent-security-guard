@@ -3,6 +3,7 @@ import json
 import unittest
 
 from guard.smoke_data import generate_smoke_records
+from guard.taxonomy import Decision, RiskCategory, Severity
 
 
 class FakeTokenizer:
@@ -50,6 +51,36 @@ class TrainingDataTests(unittest.TestCase):
         self.assertEqual(json.loads(messages[2]["content"]), record.result.model_dump(mode="json"))
         self.assertNotIn("\n", messages[1]["content"])
         self.assertNotIn("\n", messages[2]["content"])
+        self.assertEqual(messages[0]["content"], api.SYSTEM_PROMPT)
+
+    def test_system_prompt_defines_complete_guardresult_contract(self):
+        api = self.api()
+        required_fields = (
+            "schema_version",
+            "risk",
+            "decision",
+            "severity",
+            "category",
+            "summary",
+            "confidence",
+            "evidence",
+            "rule_hits",
+            "model_version",
+            "policy_version",
+        )
+
+        for field in required_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, api.SYSTEM_PROMPT)
+        for label, enum_type in (
+            ("decision", Decision),
+            ("severity", Severity),
+            ("category", RiskCategory),
+        ):
+            expected = f"{label}只能是:{','.join(member.value for member in enum_type)}"
+            with self.subTest(label=label):
+                self.assertIn(expected, api.SYSTEM_PROMPT)
+        self.assertIn("禁止额外字段", api.SYSTEM_PROMPT)
 
     def test_tokenization_masks_prompt_and_learns_assistant_plus_eos(self):
         api = self.api()
