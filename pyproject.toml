@@ -9,7 +9,7 @@ description = "Local security guard contracts and evaluation foundation for agen
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "pydantic>=2.8,<3",
+  "pydantic==2.13.4",
 ]
 
 [tool.setuptools.packages.find]

@@ -82,11 +82,23 @@ python -m unittest discover -s tests -v
 }
 ```
 
+## JSON Schema
+
+语言无关的 V1 请求和结果契约分别位于
+`schemas/v1/guard-request.schema.json` 和 `schemas/v1/guard-result.schema.json`。
+Pydantic 模型是唯一的事实来源；修改数据契约后，请重新生成并检查提交的 Schema：
+
+```bash
+python scripts/export_schemas.py
+git diff -- schemas/v1
+```
+
 ## 目录
 
 - `guard/`：稳定数据契约、风险分类和运行环境检查。
 - `docs/`：风险标准、标注规范与设计文档。
 - `scripts/`：开发和运行入口。
+- `schemas/`：语言无关的 V1 请求/结果契约。
 - `tests/`：无需 GPU 的单元测试。
 - `models/`：本地模型目录；权重被 Git 忽略。
 

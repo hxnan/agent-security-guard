@@ -1,0 +1,101 @@
+{
+  "$defs": {
+    "GuardContext": {
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actor"
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cwd"
+        },
+        "privilege": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Privilege"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "tool_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Name"
+        }
+      },
+      "title": "GuardContext",
+      "type": "object"
+    },
+    "ToolType": {
+      "enum": [
+        "shell",
+        "powershell",
+        "cmd",
+        "python",
+        "tool"
+      ],
+      "title": "ToolType",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "command": {
+      "maxLength": 32768,
+      "minLength": 1,
+      "title": "Command",
+      "type": "string"
+    },
+    "context": {
+      "$ref": "#/$defs/GuardContext"
+    },
+    "type": {
+      "$ref": "#/$defs/ToolType"
+    }
+  },
+  "required": [
+    "type",
+    "command"
+  ],
+  "title": "GuardRequest",
+  "type": "object"
+}

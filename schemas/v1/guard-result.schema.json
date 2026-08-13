@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "Decision": {
+      "enum": [
+        "allow",
+        "review",
+        "block"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "RiskCategory": {
+      "enum": [
+        "remote_execution",
+        "privilege_escalation",
+        "destructive_operation",
+        "credential_access",
+        "data_exfiltration",
+        "persistence",
+        "defense_evasion",
+        "unsafe_download",
+        "network_change",
+        "sensitive_write",
+        "resource_abuse",
+        "benign"
+      ],
+      "title": "RiskCategory",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "category": {
+      "$ref": "#/$defs/RiskCategory"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "decision": {
+      "$ref": "#/$defs/Decision"
+    },
+    "evidence": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "model_version": {
+      "minLength": 1,
+      "title": "Model Version",
+      "type": "string"
+    },
+    "policy_version": {
+      "minLength": 1,
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "risk": {
+      "title": "Risk",
+      "type": "boolean"
+    },
+    "rule_hits": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rule Hits",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severity"
+    },
+    "summary": {
+      "maxLength": 30,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "risk",
+    "decision",
+    "severity",
+    "category",
+    "summary",
+    "confidence",
+    "model_version",
+    "policy_version"
+  ],
+  "title": "GuardResult",
+  "type": "object"
+}
