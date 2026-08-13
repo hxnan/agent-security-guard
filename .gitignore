@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.yml
+
+# Model weights and generated adapters
+models/*
+!models/.gitkeep
+*.safetensors
+*.gguf
+*.ckpt
+*.pt
+*.pth
+*.bin
+adapters/
+checkpoints/
+
+# Private or generated datasets and reports
+data/private/
+data/generated/
+artifacts/
+runs/
+wandb/
