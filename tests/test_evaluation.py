@@ -9,7 +9,7 @@ from guard.baseline_prompt import (
 )
 from guard.contracts import GuardResult
 from guard.evaluation import BASELINE_EVAL_REPORT_VERSION, evaluate_baseline
-from guard.taxonomy import Decision
+from guard.taxonomy import Decision, RiskCategory, Severity
 from tests.test_eval_dataset import make_record
 
 
@@ -41,6 +41,27 @@ def ok_outcome(**result_overrides):
         generated_tokens=10,
         peak_gpu_memory_mb=100.0,
     )
+
+
+def gold_record(
+    sample_id,
+    *,
+    risk=False,
+    decision=Decision.ALLOW,
+    severity=Severity.NONE,
+    category=RiskCategory.BENIGN,
+):
+    record = make_record(
+        sample_id=sample_id,
+        metadata__variant=f"metric_{sample_id.lower()}",
+    )
+    record.expected.risk = risk
+    record.expected.decision = decision
+    record.expected.severity = severity
+    record.expected.category = category
+    record.expected.summary = "评估目标行为"
+    record.expected.evidence = ["fixture"] if risk else []
+    return record
 
 
 class SequencePredictor:
@@ -189,6 +210,128 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
         )
         self.assertEqual(report["compliance"]["json_object_rate"], 1.0)
         self.assertEqual(report["compliance"]["summary_compliance_rate"], 0.0)
+
+
+class BaselineEvaluationMetricTests(unittest.TestCase):
+    def fixture(self):
+        records = [
+            gold_record("EV001"),
+            gold_record(
+                "EV002",
+                risk=True,
+                decision=Decision.BLOCK,
+                severity=Severity.CRITICAL,
+                category=RiskCategory.REMOTE_EXECUTION,
+            ),
+            gold_record(
+                "EV003",
+                risk=True,
+                decision=Decision.REVIEW,
+                severity=Severity.HIGH,
+                category=RiskCategory.CREDENTIAL_ACCESS,
+            ),
+            gold_record("EV004"),
+            gold_record(
+                "EV005",
+                risk=True,
+                decision=Decision.BLOCK,
+                severity=Severity.CRITICAL,
+                category=RiskCategory.DESTRUCTIVE_OPERATION,
+            ),
+        ]
+        outcomes = [
+            ok_outcome(),
+            ok_outcome(
+                risk=True,
+                decision="block",
+                severity="critical",
+                category="remote_execution",
+                summary="执行远程内容",
+            ),
+            ok_outcome(),
+            ok_outcome(
+                risk=True,
+                decision="review",
+                severity="high",
+                category="network_change",
+                summary="修改网络访问策略",
+            ),
+            BaselinePredictionOutcome(
+                status=PredictionStatus.PARSE_ERROR,
+                fallback_decision=Decision.REVIEW,
+                error="invalid output",
+                raw_text="not json",
+            ),
+        ]
+        return records, outcomes
+
+    def test_risk_metrics_use_valid_outputs_and_report_coverage(self):
+        records, outcomes = self.fixture()
+        report = evaluate_baseline(
+            records,
+            SequencePredictor(outcomes),
+            freeze_version="freeze",
+            max_new_tokens=256,
+        )
+        risk = report["risk_metrics"]
+        self.assertEqual(risk["evaluated"], 4)
+        self.assertEqual(risk["total"], 5)
+        self.assertEqual(risk["tp"], 1)
+        self.assertEqual(risk["tn"], 1)
+        self.assertEqual(risk["fp"], 1)
+        self.assertEqual(risk["fn"], 1)
+        self.assertEqual(risk["coverage"], 0.8)
+        self.assertEqual(risk["precision"], 0.5)
+        self.assertEqual(risk["recall"], 0.5)
+        self.assertEqual(risk["f1"], 0.5)
+        self.assertEqual(risk["false_positive_rate"], 0.5)
+        self.assertEqual(risk["false_negative_rate"], 0.5)
+
+    def test_category_metrics_report_confusion_support_coverage_and_macro_f1(self):
+        records, outcomes = self.fixture()
+        report = evaluate_baseline(
+            records,
+            SequencePredictor(outcomes),
+            freeze_version="freeze",
+            max_new_tokens=256,
+        )
+        category = report["category_metrics"]
+        self.assertEqual(category["support"]["benign"], 2)
+        self.assertEqual(category["support"]["destructive_operation"], 1)
+        self.assertEqual(category["valid_coverage"]["benign"], 1.0)
+        self.assertEqual(category["valid_coverage"]["destructive_operation"], 0.0)
+        self.assertEqual(category["recall"]["benign"], 0.5)
+        self.assertEqual(category["recall"]["remote_execution"], 1.0)
+        self.assertEqual(category["recall"]["credential_access"], 0.0)
+        self.assertEqual(category["recall"]["destructive_operation"], 0.0)
+        self.assertEqual(category["f1"]["benign"], 0.5)
+        self.assertEqual(category["f1"]["remote_execution"], 1.0)
+        self.assertEqual(category["confusion_matrix"]["benign"]["benign"], 1)
+        self.assertEqual(category["confusion_matrix"]["benign"]["network_change"], 1)
+        self.assertEqual(category["confusion_matrix"]["credential_access"]["benign"], 1)
+        self.assertAlmostEqual(category["macro_f1"], 0.125)
+
+    def test_decision_and_high_risk_metrics_include_fail_safe_fallback(self):
+        records, outcomes = self.fixture()
+        report = evaluate_baseline(
+            records,
+            SequencePredictor(outcomes),
+            freeze_version="freeze",
+            max_new_tokens=256,
+        )
+        decision = report["decision_metrics"]
+        self.assertEqual(decision["valid_predictions"], 4)
+        self.assertEqual(decision["model_decision_accuracy_valid"], 0.5)
+        self.assertEqual(decision["effective_decision_accuracy_all"], 0.4)
+        self.assertEqual(decision["fallback_count"], 1)
+
+        safety = report["safety_metrics"]
+        self.assertEqual(safety["critical_support"], 2)
+        self.assertEqual(safety["critical_allow_misses"], 0)
+        self.assertEqual(safety["critical_allow_miss_rate"], 0.0)
+        self.assertEqual(safety["high_or_critical_support"], 3)
+        self.assertEqual(safety["high_or_critical_allow_misses"], 1)
+        self.assertAlmostEqual(safety["high_or_critical_allow_miss_rate"], 1 / 3)
 
 
 if __name__ == "__main__":
