@@ -12,8 +12,9 @@
 - 提供本地模型文件与 CUDA 环境检查。
 - 单元测试和 GitHub Actions 不依赖模型权重或 GPU。
 - 已建立 100 条 Eval V1 场景蓝图和 100 条可机器校验的首轮 Gold Draft。
+- 已完成 100 条 Draft 的第二次机器语义复核，并提供不泄露主标签的盲审导出/比对工具。
 
-本阶段**不会执行待检测命令**；已经验证本地 QLoRA Adapter 的训练和单样本推理链路，尚未实现生产级推理器或正式质量评估。当前 Gold Draft 明确标记为 `llm-assisted-draft + pending`，仍需独立人工复核后才能冻结为正式 Eval V1。
+本阶段**不会执行待检测命令**；已经验证本地 QLoRA Adapter 的训练和单样本推理链路，尚未实现生产级推理器或正式质量评估。当前 Gold Draft 明确标记为 `llm-assisted-draft + pending`，机器复核不替代独立人工复核，仍需人工复核后才能冻结为正式 Eval V1。
 
 ## 快速开始
 
@@ -119,7 +120,31 @@ python scripts/validate_eval_dataset.py --require-complete
 python scripts/report_eval_dataset.py
 ```
 
-独立复核完成后，正式冻结门禁为：
+第二次机器语义复核覆盖 EV001–EV100，并修正了结构校验无法发现的 6 个事实/上下文问题；完整记录见 [`docs/eval_v1_machine_review_2026-08-14.md`](docs/eval_v1_machine_review_2026-08-14.md)。这一步仍不计作独立人工复核。
+
+### 独立盲审
+
+为了让 reviewer 在判断前看不到主 Gold 标签，可以导出只包含 `sample_id` 和 `request` 的盲审包：
+
+```bash
+python scripts/export_eval_review_packet.py --output /tmp/eval-v1-blind.jsonl
+```
+
+reviewer 单独填写答案 JSONL；每行格式为：
+
+```json
+{"sample_id":"EV001","decision":"allow","severity":"none","category":"benign","summary":"查看仓库状态","confidence":0.99,"evidence":["git status --short"]}
+```
+
+完成一批或全部样本后，与当前 Gold Draft 比较四个核心字段 `decision`、`severity`、`category`、`summary`：
+
+```bash
+python scripts/compare_eval_review.py --answers /path/to/reviewer-answers.jsonl
+```
+
+返回码 `0` 表示已提交答案的核心字段全部一致；`3` 表示存在需要讨论/裁决的分歧；`1` 表示输入或数据校验失败。比对工具只报告差异，不会自动把任何记录标为 `agreed` 或 `adjudicated`。
+
+独立复核和必要的争议裁决完成后，正式冻结门禁为：
 
 ```bash
 python scripts/validate_eval_dataset.py --require-complete --require-frozen
@@ -193,13 +218,14 @@ python scripts/train_smoke_qlora.py --max-length 256 --lora-target attention --o
 - [`docs/work_plan.md`](docs/work_plan.md)：分阶段工作计划与验收门槛。
 - [`docs/risk_taxonomy_v1.md`](docs/risk_taxonomy_v1.md)：风险分类 V1。
 - [`docs/annotation_guideline_v1.md`](docs/annotation_guideline_v1.md)：类别、决策、严重度、置信度、证据和复核的人工标注规范 V1。
+- [`docs/eval_v1_machine_review_2026-08-14.md`](docs/eval_v1_machine_review_2026-08-14.md)：第二次机器语义复核的范围、修正项和人工复核边界。
 - [`docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md`](docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md)：100 条 Eval V1 样本蓝图的配额与验收设计。
 - [`docs/superpowers/specs/2026-08-14-eval-v1-gold-dataset-design.md`](docs/superpowers/specs/2026-08-14-eval-v1-gold-dataset-design.md)：Gold Draft、校验、统计和冻结门禁设计。
 - [`docs/superpowers/specs/2026-08-13-minimal-qlora-smoke-design.md`](docs/superpowers/specs/2026-08-13-minimal-qlora-smoke-design.md)：最小 QLoRA 工程 smoke 闭环及其非质量里程碑边界。
 
 ## 近期路线
 
-1. 完成 100 条 Gold Draft 的独立人工复核并冻结 Eval V1。
+1. 使用盲审流程完成 100 条 Gold Draft 的独立人工复核并冻结 Eval V1。
 2. 接入 Qwen2.5-1.5B-Instruct Baseline 推理并建立可重复评估报告。
 3. 实现确定性规则和策略融合，并与 Model-only Baseline 对比。
 4. 根据错误分析生成正式训练集。
