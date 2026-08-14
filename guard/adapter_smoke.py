@@ -6,6 +6,7 @@ import time
 
 from .contracts import GuardResult
 from .qlora import build_quantization_config, _load_split
+from .result_parsing import GeneratedResultError, extract_first_json_object as _extract_json
 from .training_config import resolve_training_model_path
 from .training_data import format_training_messages
 
@@ -59,17 +60,11 @@ def validate_adapter_artifacts(
 
 
 def extract_first_json_object(text: str) -> dict[str, object]:
-    decoder = json.JSONDecoder()
-    for index, character in enumerate(text):
-        if character != "{":
-            continue
-        try:
-            value, _ = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-    raise AdapterSmokeError("generated text does not contain a valid JSON object")
+    """Compatibility wrapper around the shared generated-result extractor."""
+    try:
+        return _extract_json(text)
+    except GeneratedResultError as exc:
+        raise AdapterSmokeError(str(exc)) from exc
 
 
 def validate_generated_result(text: str) -> GuardResult:
