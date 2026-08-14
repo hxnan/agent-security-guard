@@ -110,26 +110,36 @@ def validate_record_consistency(record: EvalGoldRecord) -> None:
 
 
 def load_eval_dataset(path: Path) -> list[EvalGoldRecord]:
-    """Load Eval V1 gold JSONL without executing any contained command."""
+    """Load one JSONL file or a directory of JSONL shards without execution."""
+    paths = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+    if path.is_dir() and not paths:
+        raise EvalDatasetValidationError(f"dataset directory contains no JSONL shards: {path}")
+
     records: list[EvalGoldRecord] = []
-    with path.open(encoding="utf-8") as dataset_file:
-        for line_number, line in enumerate(dataset_file, start=1):
-            if not line.strip():
-                raise EvalDatasetValidationError(
-                    f"line {line_number}: blank lines are not allowed"
+    for dataset_path in paths:
+        with dataset_path.open(encoding="utf-8") as dataset_file:
+            for line_number, line in enumerate(dataset_file, start=1):
+                location = (
+                    f"{dataset_path.name}:line {line_number}"
+                    if path.is_dir()
+                    else f"line {line_number}"
                 )
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise EvalDatasetValidationError(
-                    f"line {line_number}: invalid JSON: {exc.msg}"
-                ) from exc
-            try:
-                records.append(EvalGoldRecord.model_validate(value))
-            except ValidationError as exc:
-                raise EvalDatasetValidationError(
-                    f"line {line_number}: invalid gold record: {exc}"
-                ) from exc
+                if not line.strip():
+                    raise EvalDatasetValidationError(
+                        f"{location}: blank lines are not allowed"
+                    )
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise EvalDatasetValidationError(
+                        f"{location}: invalid JSON: {exc.msg}"
+                    ) from exc
+                try:
+                    records.append(EvalGoldRecord.model_validate(value))
+                except ValidationError as exc:
+                    raise EvalDatasetValidationError(
+                        f"{location}: invalid gold record: {exc}"
+                    ) from exc
     return records
 
 
