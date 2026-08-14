@@ -16,7 +16,7 @@ from guard.eval_dataset import (
     validate_eval_dataset,
 )
 
-DEFAULT_DATASET = REPOSITORY_ROOT / "data" / "eval-v1" / "gold.jsonl"
+DEFAULT_DATASET = REPOSITORY_ROOT / "data" / "eval-v1" / "gold"
 
 
 def build_parser() -> argparse.ArgumentParser:
