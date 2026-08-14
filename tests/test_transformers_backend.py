@@ -55,17 +55,19 @@ class FakeInputs(dict):
 
 
 class FakeSequence:
+    values = [101, 102, 103, 201, 202]
+
     def __getitem__(self, key):
-        if isinstance(key, slice):
-            start = key.start or 0
-            return [101, 102, 103, 201, 202][start:key.stop:key.step]
-        return [101, 102, 103, 201, 202][key]
+        return self.values[key]
 
 
 class FakeOutput:
     def __getitem__(self, key):
+        sequence = FakeSequence()
         if key == 0:
-            return FakeSequence()
+            return sequence
+        if isinstance(key, tuple) and len(key) == 2 and key[0] == 0:
+            return sequence[key[1]]
         raise IndexError(key)
 
 
@@ -198,7 +200,10 @@ class TransformersBackendTests(unittest.TestCase):
                 transformers_module=FakeTransformers,
             )
             result = backend.generate(
-                [{"role": "system", "content": "guard"}, {"role": "user", "content": "{}"}],
+                [
+                    {"role": "system", "content": "guard"},
+                    {"role": "user", "content": "{}"},
+                ],
                 max_new_tokens=64,
             )
 
@@ -229,7 +234,8 @@ class TransformersBackendTests(unittest.TestCase):
                 AutoModelForCausalLM = FakeAutoModel
 
             with self.assertRaisesRegex(
-                TransformersBackendError, "could not load local baseline runtime: corrupt tokenizer"
+                TransformersBackendError,
+                "could not load local baseline runtime: corrupt tokenizer",
             ):
                 TransformersQwenBackend.from_local_model(
                     model_path,
