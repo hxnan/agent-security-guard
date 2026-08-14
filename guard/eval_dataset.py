@@ -225,12 +225,10 @@ def validate_against_blueprint(
             ),
             ("variant", record.metadata.variant, blueprint.variant),
         )
+        review_status = ReviewStatus(record.metadata.review_status)
         for field, actual, expected in checks:
             if actual != expected:
-                if (
-                    field == "planned_category"
-                    and record.metadata.review_status is ReviewStatus.ADJUDICATED
-                ):
+                if field == "planned_category" and review_status is ReviewStatus.ADJUDICATED:
                     continue
                 actual_value = getattr(actual, "value", actual)
                 expected_value = getattr(expected, "value", expected)
