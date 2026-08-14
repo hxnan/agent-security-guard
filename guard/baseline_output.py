@@ -1,6 +1,6 @@
 """Model-facing semantic output parsing for Baseline V2."""
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .baseline_prompt import BASELINE_MODEL_VERSION, BASELINE_POLICY_VERSION
 from .contracts import GuardResult
@@ -23,6 +23,8 @@ class BaselineSemanticResult(BaseModel):
     @field_validator("confidence", mode="before")
     @classmethod
     def normalize_numeric_confidence_string(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("confidence must be a JSON number, not a boolean")
         if isinstance(value, str):
             try:
                 return float(value)
@@ -40,35 +42,41 @@ class BaselineSemanticResult(BaseModel):
             raise ValueError("summary must contain Chinese characters")
         return value
 
-    @model_validator(mode="after")
-    def labels_must_be_consistent(self):
-        if self.category is RiskCategory.BENIGN:
-            if self.decision is not Decision.ALLOW or self.severity is not Severity.NONE:
-                raise ValueError("benign requires decision=allow and severity=none")
-            return self
 
-        if self.decision is Decision.ALLOW or self.severity is Severity.NONE:
-            raise ValueError(
-                "non-benign requires decision in {review,block} and non-none severity"
-            )
-        if self.decision is Decision.BLOCK and self.severity not in {
-            Severity.HIGH,
-            Severity.CRITICAL,
-        }:
-            raise ValueError("block requires severity high or critical")
-        return self
-
-
-def parse_baseline_semantic_result(text: str) -> GuardResult:
-    """Parse six model fields and build the system-owned GuardResult envelope."""
-    value = extract_first_json_object(text)
+def validate_baseline_semantic_object(value: dict[str, object]) -> BaselineSemanticResult:
+    """Validate model-facing fields and lossless representation normalization."""
     try:
-        semantic = BaselineSemanticResult.model_validate(value)
+        return BaselineSemanticResult.model_validate(value)
     except ValueError as exc:
         raise GeneratedResultError(
             f"generated semantic result is invalid: {exc}"
         ) from exc
 
+
+def validate_baseline_semantic_consistency(semantic: BaselineSemanticResult) -> None:
+    """Reject contradictory labels without repairing model semantics."""
+    if semantic.category is RiskCategory.BENIGN:
+        if semantic.decision is not Decision.ALLOW or semantic.severity is not Severity.NONE:
+            raise GeneratedResultError(
+                "generated semantic result is inconsistent: benign requires decision=allow and severity=none"
+            )
+        return
+
+    if semantic.decision is Decision.ALLOW or semantic.severity is Severity.NONE:
+        raise GeneratedResultError(
+            "generated semantic result is inconsistent: non-benign requires decision in {review,block} and non-none severity"
+        )
+    if semantic.decision is Decision.BLOCK and semantic.severity not in {
+        Severity.HIGH,
+        Severity.CRITICAL,
+    }:
+        raise GeneratedResultError(
+            "generated semantic result is inconsistent: block requires severity high or critical"
+        )
+
+
+def build_baseline_guard_result(semantic: BaselineSemanticResult) -> GuardResult:
+    """Construct and validate the immutable system-owned GuardResult envelope."""
     payload = semantic.model_dump(mode="json")
     payload.update(
         {
@@ -85,3 +93,11 @@ def parse_baseline_semantic_result(text: str) -> GuardResult:
         raise GeneratedResultError(
             f"system-enveloped GuardResult is invalid: {exc}"
         ) from exc
+
+
+def parse_baseline_semantic_result(text: str) -> GuardResult:
+    """Parse six model fields and build the system-owned GuardResult envelope."""
+    value = extract_first_json_object(text)
+    semantic = validate_baseline_semantic_object(value)
+    validate_baseline_semantic_consistency(semantic)
+    return build_baseline_guard_result(semantic)
