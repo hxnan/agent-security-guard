@@ -17,7 +17,7 @@ from guard.evaluation import evaluate_baseline, write_evaluation_report
 from guard.transformers_backend import TransformersBackendError, TransformersQwenBackend
 
 
-DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "baseline-eval-v1" / "report.json"
+DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "baseline-eval-v2" / "report.json"
 
 
 def build_parser() -> argparse.ArgumentParser:
