@@ -11,8 +11,9 @@
 - 使用 Pydantic 校验请求和结果，摘要限制为 30 个字符。
 - 提供本地模型文件与 CUDA 环境检查。
 - 单元测试和 GitHub Actions 不依赖模型权重或 GPU。
+- 已建立 100 条 Eval V1 场景蓝图和 100 条可机器校验的首轮 Gold Draft。
 
-本阶段**不会执行待检测命令**；已经验证本地 QLoRA Adapter 的训练和单样本推理链路，尚未实现生产级推理器或质量评估。
+本阶段**不会执行待检测命令**；已经验证本地 QLoRA Adapter 的训练和单样本推理链路，尚未实现生产级推理器或正式质量评估。当前 Gold Draft 明确标记为 `llm-assisted-draft + pending`，仍需独立人工复核后才能冻结为正式 Eval V1。
 
 ## 快速开始
 
@@ -93,16 +94,38 @@ python scripts/export_schemas.py
 git diff -- schemas/v1
 ```
 
-## Eval V1 样本蓝图
+## Eval V1
 
 首版评估集的 100 条场景规划位于
-[`data/eval-v1/blueprint.jsonl`](data/eval-v1/blueprint.jsonl)。它固定工具类型、正常/危险/边界/注入配额和风险类别覆盖，但尚不包含最终命令与人工金标。
+[`data/eval-v1/blueprint.jsonl`](data/eval-v1/blueprint.jsonl)。它固定工具类型、正常/危险/边界/注入配额和风险类别覆盖。
 
-验证结构、唯一性和所有固定配额：
+验证 Blueprint 结构、唯一性和固定配额：
 
 ```bash
 python scripts/validate_eval_blueprint.py
 ```
+
+首轮具体命令和期望结果位于 `data/eval-v1/gold/`，按 10 条一组拆成可独立复核的 JSONL shard。当前 100 条全部明确标记为：
+
+```text
+source = llm-assisted-draft
+review_status = pending
+```
+
+它们可以作为人工复核的起点，但**尚不是冻结金标**。验证 100 条 Draft 的 Schema、一致性和 Blueprint 对齐：
+
+```bash
+python scripts/validate_eval_dataset.py --require-complete
+python scripts/report_eval_dataset.py
+```
+
+独立复核完成后，正式冻结门禁为：
+
+```bash
+python scripts/validate_eval_dataset.py --require-complete --require-frozen
+```
+
+在所有记录变为 `agreed` 或 `adjudicated` 之前，这条命令应当失败；这是防止把未复核 Draft 当作正式评估集的设计行为。
 
 ## 最小 QLoRA 训练闭环
 
@@ -156,10 +179,10 @@ python scripts/train_smoke_qlora.py --max-length 256 --lora-target attention --o
 
 ## 目录
 
-- `guard/`：稳定数据契约、风险分类和运行环境检查。
+- `guard/`：稳定数据契约、风险分类和评估数据校验。
 - `data/`：版本化评估数据与样本规划；不存放模型权重。
 - `docs/`：风险标准、标注规范与设计文档。
-- `scripts/`：开发和运行入口。
+- `scripts/`：开发、校验和运行入口。
 - `schemas/`：语言无关的 V1 请求/结果契约。
 - `tests/`：无需 GPU 的单元测试。
 - `models/`：本地模型目录；权重被 Git 忽略。
@@ -171,12 +194,13 @@ python scripts/train_smoke_qlora.py --max-length 256 --lora-target attention --o
 - [`docs/risk_taxonomy_v1.md`](docs/risk_taxonomy_v1.md)：风险分类 V1。
 - [`docs/annotation_guideline_v1.md`](docs/annotation_guideline_v1.md)：类别、决策、严重度、置信度、证据和复核的人工标注规范 V1。
 - [`docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md`](docs/superpowers/specs/2026-08-13-eval-v1-blueprint-design.md)：100 条 Eval V1 样本蓝图的配额与验收设计。
+- [`docs/superpowers/specs/2026-08-14-eval-v1-gold-dataset-design.md`](docs/superpowers/specs/2026-08-14-eval-v1-gold-dataset-design.md)：Gold Draft、校验、统计和冻结门禁设计。
 - [`docs/superpowers/specs/2026-08-13-minimal-qlora-smoke-design.md`](docs/superpowers/specs/2026-08-13-minimal-qlora-smoke-design.md)：最小 QLoRA 工程 smoke 闭环及其非质量里程碑边界。
 
 ## 近期路线
 
-1. 冻结风险分类、请求/输出 Schema 和标注规范。
-2. 建立 100 条人工复核的 Evaluation Dataset V1。
-3. 实现确定性规则、模型推理和策略融合。
-4. 建立分类指标、延迟、格式合规率及误杀率评估。
-5. 生成训练集并在 6GB GPU 上进行 QLoRA/SFT。
+1. 完成 100 条 Gold Draft 的独立人工复核并冻结 Eval V1。
+2. 接入 Qwen2.5-1.5B-Instruct Baseline 推理并建立可重复评估报告。
+3. 实现确定性规则和策略融合，并与 Model-only Baseline 对比。
+4. 根据错误分析生成正式训练集。
+5. 在 6GB GPU 上进行 QLoRA/SFT 并与 Baseline 比较。

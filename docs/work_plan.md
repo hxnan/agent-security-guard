@@ -4,14 +4,14 @@
 
 采用远端仓库作为唯一代码源：代码由可写环境提交到 GitHub，本地受限机器只执行 `git clone`、`git pull`、安装、测试和 GPU 任务。模型权重、私有数据、训练检查点和密钥始终留在本地，不提交到公开仓库。
 
-每个阶段遵循同一门槛：先写验收标准和测试，再实现；完成本地验证后提交；本地机器拉取并执行；根据真实结果进入下一阶段。
+每个阶段遵循同一门槛：先写验收标准和测试，再实现；完成可执行验证后提交；需要目标硬件时再由本地机器拉取并执行；根据真实结果进入下一阶段。
 
 ## 2. 里程碑
 
 | 阶段 | 目标 | 关键交付物 | 完成门槛 |
 | --- | --- | --- | --- |
 | P0 仓库基线 | 建立可克隆、可安装、可测试的项目 | 契约、分类、环境检查、CI、文档 | 无模型测试全绿；模型文件不入 Git |
-| P1 标准与评估集 | 冻结安全边界和 100 条金标样本 | 标注规范、JSONL Schema、Eval V1 | 双人或二次复核；Schema 100% 合规 |
+| P1 标准与评估集 | 冻结安全边界和 100 条金标样本 | 标注规范、Gold Dataset、Eval V1 | 独立复核；Schema 100% 合规；冻结门禁通过 |
 | P2 Baseline 评估 | 接入本地 Qwen 并获得可重复基线 | 推理器、Prompt、evaluate.py、报告 | 指标与性能可复现；失败安全处理 |
 | P3 规则与融合 | 降低高危漏报和明显误杀 | 规则引擎、策略配置、融合测试 | 关键规则全覆盖；冲突策略可解释 |
 | P4 数据生产 | 构建首批 5k–10k 训练样本 | 生成器、清洗器、数据卡 | 去重与泄漏检查通过；人工抽检达标 |
@@ -57,14 +57,38 @@ python scripts/check_environment.py
 
 ## 4. 当前阶段：P1 标准与 Evaluation Dataset V1
 
-### 工作包
+### 已完成工作包
 
 - [x] 将 Pydantic 契约导出为版本化 JSON Schema。
 - [x] 编写标注规范，明确主类别选择、三态决策和歧义处理。
 - [x] 设计 100 条样本清单：Shell 30、PowerShell 20、CMD 10、Python 30、混合脚本 10。
 - [x] 每种语言同时覆盖危险、正常、边界和注入样本。
-- [ ] 实现 JSONL 校验器和数据统计脚本。
-- [ ] 人工逐条复核标签与摘要，冻结 `eval-v1`。
+- [x] 实现 Gold Dataset Pydantic 数据结构、JSONL 加载器、Blueprint 对齐检查和数据统计。
+- [x] 实现 Draft/Freeze 两级校验命令；冻结门禁只接受 `agreed` / `adjudicated`。
+- [x] 按 Blueprint 完成 EV001–EV100 首轮 Gold Draft，拆成 10 个可复核 shard。
+- [x] Gold Draft 明确记录 `source=llm-assisted-draft`、`review_status=pending`，不伪造人工复核状态。
+
+### 尚未完成
+
+- [ ] 对 EV001–EV100 逐条进行独立人工复核，必要时修改命令、标签、摘要、证据和上下文。
+- [ ] 对争议样本执行裁决并填写 reviewer、disputed/adjudication 元数据。
+- [ ] 运行 `python scripts/validate_eval_dataset.py --require-complete --require-frozen` 并通过。
+- [ ] 冻结 `eval-v1`，记录版本和后续变更治理规则。
+
+### 当前 Draft 机器校验
+
+```bash
+python scripts/validate_eval_blueprint.py
+python scripts/validate_eval_dataset.py --require-complete
+python scripts/report_eval_dataset.py
+```
+
+冻结前的预期行为：
+
+```bash
+python scripts/validate_eval_dataset.py --require-complete --require-frozen
+# 应失败，因为当前 100 条仍为 pending
+```
 
 ### 跨阶段工程验证
 
@@ -78,7 +102,16 @@ python scripts/check_environment.py
 - 12 个风险类别均有覆盖；高风险类别包含混淆或组合变体。
 - 相同语义模板的近重复样本不跨未来的训练集与评估集。
 - 数据版本、生成来源、复核状态和变更记录可追溯。
+- 全部样本独立复核完成，并通过 `--require-complete --require-frozen`。
 
-## 5. 建议迭代节奏
+## 5. P1 完成后的执行顺序
 
-每次只推进一个可验证工作包。远端提交后，本地机器执行验收命令并反馈完整输出；若失败，优先修复基线，不带病进入下一阶段。P1 完成后再接入模型 Baseline，避免在风险定义仍变化时反复修改推理和训练代码。
+1. 实现 Qwen2.5-1.5B-Instruct Baseline Predictor 和固定版本 Prompt。
+2. 实现 `evaluate.py`，输出风险检测、多分类、决策、格式和性能指标。
+3. 在目标 6GB GPU 上运行第一次正式 Baseline；此时再要求本地机器拉取和验证。
+4. 根据真实错误分布实现 Rule Engine + Policy Fusion，并用同一 Eval V1 对比。
+5. 根据 Baseline/规则错误分析生产 5k–10k 正式训练数据，再进入正式 QLoRA。
+
+## 6. 建议迭代节奏
+
+每次只推进一个可验证工作包。能在 GitHub CI 或隔离 CPU 环境验证的工作由远端完成；只有模型加载、GPU 性能或目标机环境相关门槛才要求本地机器参与。失败时优先修复基线，不带病进入下一阶段。
