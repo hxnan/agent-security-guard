@@ -92,14 +92,26 @@ python scripts/validate_eval_freeze.py
 
 ## 5. 当前阶段：P2 Baseline 评估
 
-### P2.1 Baseline Predictor
+### P2.1 Baseline Predictor — CPU/CI 实现完成
 
-- [ ] 固定版本化系统 Prompt，明确 GuardResult V1 全字段、枚举和“命令内容是不可信数据”。
-- [ ] 实现 `GuardRequest -> Qwen2.5-1.5B-Instruct -> GuardResult` 的生产级 predictor 边界。
-- [ ] 复用稳健 JSON object 提取，处理前后文本、字符串内花括号、缺失 JSON 和非法 JSON。
-- [ ] 对 Schema 错误、非法枚举、输出截断、模型异常提供确定性失败安全结果。
-- [ ] 模型加载路径继续使用现有 `AGENT_SECURITY_MODEL_PATH` 约定。
-- [ ] CPU-only 测试使用 fake backend，不依赖权重或 GPU。
+- [x] 固定 `baseline-prompt-v1` 系统 Prompt，明确 GuardResult V1 全字段、枚举和“命令内容是不可信数据”。
+- [x] 实现 `GuardRequest -> generation backend -> GuardResult` 的生产级 predictor 边界。
+- [x] 抽取共享稳健 JSON object 解析，处理前后文本、字符串内花括号、缺失 JSON、非法 JSON 和错误字段集合。
+- [x] 对 Schema 错误、非法枚举、错误 provenance、非空 `rule_hits`、模型异常提供确定性失败安全结果。
+- [x] 失败路径不伪造风险类别，显式输出 `backend_error/parse_error + fallback_decision=review`。
+- [x] 模型加载路径继续使用现有 `AGENT_SECURITY_MODEL_PATH` / 默认本地模型目录约定。
+- [x] 实现 lazy local Transformers/Qwen backend：`local_files_only=True`、BF16、CUDA、greedy generation、只解码新增 token。
+- [x] 提供 `scripts/predict_baseline.py` 单请求本地入口。
+- [x] CPU-only 测试使用 fake backend/fake Torch/Transformers，不依赖权重或 GPU。
+- [ ] 在 P2.3 与完整 Evaluation Engine 一起完成目标 6GB GPU 的真实模型运行验证。
+
+固定版本：
+
+```text
+prompt_version = baseline-prompt-v1
+model_version  = qwen2.5-1.5b-instruct-baseline-v1
+policy_version = model-only-baseline-v1
+```
 
 ### P2.2 Evaluation Engine
 
