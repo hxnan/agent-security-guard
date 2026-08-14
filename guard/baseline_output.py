@@ -35,7 +35,8 @@ class BaselineSemanticResult(BaseModel):
     @field_validator("summary")
     @classmethod
     def summary_must_be_chinese(cls, value: str) -> str:
-        value = value.strip()
+        if value != value.strip():
+            raise ValueError("summary must not contain surrounding whitespace")
         if not value:
             raise ValueError("summary must not be blank")
         if not any("\u4e00" <= character <= "\u9fff" for character in value):
