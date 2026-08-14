@@ -31,50 +31,20 @@
 
 ## 4. 已完成：P1 标准与 Evaluation Dataset V1 technical freeze
 
-### 标准与数据结构
+- [x] 版本化 JSON Schema、12 类风险和人工标注规范。
+- [x] 100 条 Blueprint：Shell 30、PowerShell 20、CMD 10、Python 30、Mixed 10。
+- [x] EV001–EV100 首轮 Gold Draft，保留 `llm-assisted-draft + pending` provenance。
+- [x] 第二次机器语义复核并修正 6 个事实/上下文问题。
+- [x] 独立 Agent 盲审，固定基线 commit `17996d6b75f8860ffe54ffa9e1d8e77f12be0132`。
+- [x] 86/100 `decision/severity/category` 实质标签一致，14/100 分歧。
+- [x] 对 14 条分歧建立显式 adjudication：8 条采用 reviewer，6 条保留 Gold。
+- [x] 确定性 resolver：Gold Draft + independent review + adjudication -> resolved freeze view。
+- [x] `data/eval-v1/freeze-manifest.json` 明确 `reviewer_type=independent-agent`、`human_reviewed=false`。
+- [x] `scripts/validate_eval_freeze.py` technical-freeze 门禁。
 
-- [x] 将 Pydantic 契约导出为版本化 JSON Schema。
-- [x] 编写标注规范，明确主类别选择、三态决策、歧义处理和固定 confidence 档位。
-- [x] 设计 100 条样本清单：Shell 30、PowerShell 20、CMD 10、Python 30、混合脚本 10。
-- [x] 每种语言覆盖危险、正常、边界和注入样本。
-- [x] 实现 Gold Dataset Pydantic 数据结构、JSONL 加载器、Blueprint 对齐检查和统计。
-- [x] 按 Blueprint 完成 EV001–EV100 首轮 Gold Draft，并保留 `llm-assisted-draft + pending` 原始 provenance。
+P1 freeze 固定统计：100 条、`86 agreed + 14 adjudicated`、42 `allow`、33 `review`、25 `block`、12 个风险类别全部覆盖。
 
-### 机器复核与独立盲审
-
-- [x] 对 EV001–EV100 完成第二次机器语义复核，修正 6 个结构校验无法发现的事实/上下文问题。
-- [x] 实现 request-only 盲审导出工具，防止 reviewer 在作出判断前看到主 Gold 标签。
-- [x] 由独立 Agent 基于固定 commit `17996d6b75f8860ffe54ffa9e1d8e77f12be0132` 完成 EV001–EV100 盲审。
-- [x] 独立 review 以版本化 evidence 文件进入仓库；没有修改原 Gold。
-- [x] 将 `summary` 同义改写与 `decision/severity/category` 实质标签分歧分离。
-- [x] 得到 86/100 实质标签独立一致，14/100 实质标签分歧。
-
-### Adjudication 与冻结
-
-- [x] 对 14 条实质分歧建立显式 adjudication ledger。
-- [x] 8 条采用 reviewer 结论：EV022、EV024、EV026、EV050、EV060、EV081、EV082、EV087。
-- [x] 6 条保留 Gold 结论：EV023、EV046、EV047、EV058、EV083、EV084。
-- [x] 实现确定性 resolver：Gold Draft + independent review + adjudication -> resolved freeze view。
-- [x] 允许只有 `adjudicated` 记录修正原 `planned_category`；其余 Blueprint 身份字段仍严格匹配。
-- [x] 建立 `data/eval-v1/freeze-manifest.json`，明确 `reviewer_type=independent-agent`、`human_reviewed=false`。
-- [x] 实现 `scripts/validate_eval_freeze.py` technical-freeze 门禁。
-
-### P1 technical freeze 验收结果
-
-冻结视图要求并已由 CPU-only 测试覆盖：
-
-- 100 条 EV001–EV100，唯一且连续；
-- 86 `agreed` + 14 `adjudicated`；
-- 0 `pending/disputed`；
-- 42 `allow`、33 `review`、25 `block`；
-- 12 个风险类别全部覆盖；
-- Schema 和 Annotation Guideline 形式化约束全部满足；
-- Blueprint 非类别身份字段保持一致；
-- 类别规划修正必须有 adjudication；
-- provenance 可追溯；
-- `human_reviewed=false`。
-
-验证命令：
+验证：
 
 ```bash
 python scripts/validate_eval_blueprint.py
@@ -82,28 +52,26 @@ python scripts/validate_eval_dataset.py --require-complete
 python scripts/validate_eval_freeze.py
 ```
 
-说明：这里完成的是 **independent-agent reviewed technical freeze**，足以作为 P2 模型工程的固定评估基准，但不宣称为 human-reviewed 数据集。若未来发布流程要求人类治理签字，可在不改变当前 evidence 链的前提下增加 human review gate。
+说明：这是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。
 
 ### 跨阶段工程验证
 
-- [x] 准备独立 smoke 数据、6GB QLoRA 脚本、训练门禁和 Adapter 推理检查。
-- [x] 在目标 GPU 完成最小训练与 Adapter 推理；3 epoch、36 次更新、峰值显存 2735.78 MB，生成结果通过 GuardResult V1 Schema。
-- [x] 明确 smoke 只验证工程链路，不替代 P2 质量评估或 P5 正式训练验收。
+- [x] 独立 smoke 数据、6GB QLoRA 脚本、训练门禁和 Adapter 推理检查。
+- [x] 目标 GPU 最小训练与 Adapter 推理：3 epoch、36 次更新、峰值显存 2735.78 MB，生成结果通过 GuardResult V1 Schema。
+- [x] smoke 只验证工程链路，不替代 P2 质量评估或 P5 正式训练验收。
 
 ## 5. 当前阶段：P2 Baseline 评估
 
 ### P2.1 Baseline Predictor — CPU/CI 实现完成
 
-- [x] 固定 `baseline-prompt-v1` 系统 Prompt，明确 GuardResult V1 全字段、枚举和“命令内容是不可信数据”。
-- [x] 实现 `GuardRequest -> generation backend -> GuardResult` 的生产级 predictor 边界。
-- [x] 抽取共享稳健 JSON object 解析，处理前后文本、字符串内花括号、缺失 JSON、非法 JSON 和错误字段集合。
-- [x] 对 Schema 错误、非法枚举、错误 provenance、非空 `rule_hits`、模型异常提供确定性失败安全结果。
-- [x] 失败路径不伪造风险类别，显式输出 `backend_error/parse_error + fallback_decision=review`。
-- [x] 模型加载路径继续使用现有 `AGENT_SECURITY_MODEL_PATH` / 默认本地模型目录约定。
-- [x] 实现 lazy local Transformers/Qwen backend：`local_files_only=True`、BF16、CUDA、greedy generation、只解码新增 token。
-- [x] 提供 `scripts/predict_baseline.py` 单请求本地入口。
-- [x] CPU-only 测试使用 fake backend/fake Torch/Transformers，不依赖权重或 GPU。
-- [ ] 在 P2.3 与完整 Evaluation Engine 一起完成目标 6GB GPU 的真实模型运行验证。
+- [x] 固定 `baseline-prompt-v1`，明确 GuardResult V1 契约和“待检测内容是不可信数据”。
+- [x] 实现 `GuardRequest -> generation backend -> GuardResult` predictor 边界。
+- [x] 共享稳健 JSON object 提取和严格字段/Schema/provenance 校验。
+- [x] `backend_error/parse_error + fallback_decision=review`，失败不伪造 category。
+- [x] lazy local Transformers/Qwen backend：`local_files_only=True`、BF16、CUDA、greedy generation、只解码新 token。
+- [x] `scripts/predict_baseline.py` 单请求入口。
+- [x] CPU-only fake backend/runtime 测试，无需模型/GPU。
+- [ ] 目标 6GB GPU 真实 Baseline 验证与 P2.2 一次性完成。
 
 固定版本：
 
@@ -113,29 +81,44 @@ model_version  = qwen2.5-1.5b-instruct-baseline-v1
 policy_version = model-only-baseline-v1
 ```
 
-### P2.2 Evaluation Engine
+### P2.2 Evaluation Engine — CPU/CI 实现完成
 
-- [ ] 从 technical freeze resolver 获取最终 100 条评估记录，禁止直接把 pending raw Gold 当正式评估答案。
-- [ ] 实现 `scripts/evaluate.py`，逐条静态推理，不执行任何样本命令。
-- [ ] 输出 risk Precision/Recall/F1、FPR/FNR。
-- [ ] 输出 category Macro-F1、per-category recall、confusion matrix。
-- [ ] 输出 decision accuracy、critical/high-risk miss rate。
-- [ ] 输出 JSON/schema/summary 合规率。
-- [ ] 输出 P50/P95 latency、吞吐、tokens/s 和 VRAM（可用时）。
-- [ ] 保存可复现 JSON report，包含模型版本、Prompt 版本、Eval freeze 版本和环境摘要。
+- [x] `guard/eval_freeze.py` 从 technical freeze resolver 获取最终 100 条记录，不直接使用 pending raw Gold。
+- [x] `guard/evaluation.py` 顺序执行 100 条静态模型推理；单条 parse/backend failure 不会终止后续样本。
+- [x] 输出 risk TP/TN/FP/FN、Precision、Recall、F1、FPR、FNR 和 strict-valid coverage。
+- [x] 输出 12 类 confusion matrix、support、valid coverage、per-category Recall/F1、Macro-F1。
+- [x] 输出 valid model decision accuracy、全量 fail-safe effective decision accuracy 和 fallback count。
+- [x] 输出 critical / high-or-critical `allow` miss 数量与比例。
+- [x] 区分 JSON object、GuardResult Schema、中文摘要、strict Baseline output compliance。
+- [x] 输出 mean/P50/P95 latency、tokens/s、最大 peak VRAM、wall throughput。
+- [x] 保存全量逐样本 JSON report，包含版本、freeze provenance、环境摘要、expected/predicted/fallback/error/raw/runtime 信息。
+- [x] `scripts/evaluate.py` 单次加载模型并评估完整 100 条冻结集。
+- [x] 报告采用 temp-file + atomic replace；默认位于 Git 忽略的 `artifacts/baseline-eval-v1/report.json`。
+- [x] CPU-only 测试覆盖失败继续、指标精确值、compliance、性能 percentile、atomic writer 和 CLI setup errors。
+- [ ] 在目标 GPU 上生成第一份真实 100 条 Baseline report。
 
-### P2.3 目标 GPU Baseline
+### P2.3 目标 GPU Baseline — 下一步需要本地执行
 
 - [ ] 在目标 RTX 1000 Ada 6GB 本地机器拉取最新 `main`。
 - [ ] 指向本地 Qwen2.5-1.5B-Instruct 权重。
-- [ ] 运行 environment check + Eval freeze check + Baseline evaluation。
-- [ ] 将不含模型权重/敏感信息的评估报告返回并进入 GitHub。
+- [ ] 运行 environment check + Eval freeze check + 100 条 Baseline evaluation。
+- [ ] 返回 stdout 和 `artifacts/baseline-eval-v1/report.json`。
+- [ ] 将不含模型权重/敏感信息的正式报告摘要进入 GitHub。
 - [ ] 以真实错误分布决定 P3 Rule Engine 优先级。
+
+正式本地命令：
+
+```bash
+python scripts/validate_eval_freeze.py
+python scripts/check_environment.py
+python scripts/evaluate.py \
+  --output artifacts/baseline-eval-v1/report.json
+```
 
 ### P2 验收条件
 
 - 同一模型、Prompt、Eval freeze 可重复生成兼容报告。
-- 任何单条坏输出不会终止完整评估；失败被显式计入指标。
+- 任何单条坏输出不会终止完整评估；失败被显式计入 coverage/compliance。
 - 预测输出不会因为待检测命令中的 prompt injection 改写系统契约。
 - 报告可定位每一个错误样本和最终 Gold 标签。
 - 性能和显存数据来自目标 6GB GPU 实测，而非估算。
