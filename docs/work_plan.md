@@ -67,11 +67,14 @@ python scripts/check_environment.py
 - [x] 实现 Draft/Freeze 两级校验命令；冻结门禁只接受 `agreed` / `adjudicated`。
 - [x] 按 Blueprint 完成 EV001–EV100 首轮 Gold Draft，拆成 10 个可复核 shard。
 - [x] Gold Draft 明确记录 `source=llm-assisted-draft`、`review_status=pending`，不伪造人工复核状态。
+- [x] 对 EV001–EV100 完成第二次机器语义复核，修正 6 个结构校验无法发现的事实、上下文或摘要问题；该复核不计作独立人工复核。
+- [x] 实现独立盲审工具：导出只含 `sample_id + request` 的复核包，并自动比较 reviewer 与主 Gold 的 `decision/severity/category/summary` 核心字段。
 
 ### 尚未完成
 
-- [ ] 对 EV001–EV100 逐条进行独立人工复核，必要时修改命令、标签、摘要、证据和上下文。
-- [ ] 对争议样本执行裁决并填写 reviewer、disputed/adjudication 元数据。
+- [ ] 由独立人工 reviewer 在看不到主 Gold 标签的情况下，对 EV001–EV100 逐条判断核心字段并提交复核答案。
+- [ ] 对核心字段分歧样本执行讨论/裁决，必要时修改命令、标签、摘要、证据和上下文，并填写 reviewer、disputed/adjudication 元数据。
+- [ ] 将一致样本标记为 `agreed`，裁决样本标记为 `adjudicated`，且保留可追溯 reviewer 信息。
 - [ ] 运行 `python scripts/validate_eval_dataset.py --require-complete --require-frozen` 并通过。
 - [ ] 冻结 `eval-v1`，记录版本和后续变更治理规则。
 
@@ -89,6 +92,28 @@ python scripts/report_eval_dataset.py
 python scripts/validate_eval_dataset.py --require-complete --require-frozen
 # 应失败，因为当前 100 条仍为 pending
 ```
+
+### 独立人工盲审流程
+
+导出不包含主 Gold 标签、场景类型、计划类别和治理状态的盲审包：
+
+```bash
+python scripts/export_eval_review_packet.py --output /tmp/eval-v1-blind.jsonl
+```
+
+reviewer 独立填写答案 JSONL 后进行比对：
+
+```bash
+python scripts/compare_eval_review.py --answers /path/to/reviewer-answers.jsonl
+```
+
+比对返回码：
+
+- `0`：已提交答案的四个核心字段全部一致；
+- `3`：至少一个样本存在核心字段分歧，需要讨论或裁决；
+- `1`：输入或数据校验失败。
+
+机器比对不会自动修改 Gold，也不会把任何样本标记为 `agreed` 或 `adjudicated`。
 
 ### 跨阶段工程验证
 
