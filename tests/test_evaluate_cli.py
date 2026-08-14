@@ -33,13 +33,13 @@ class EvaluateCliTests(unittest.TestCase):
                 "--output",
                 output,
             )
-        self.assertEqual(result.returncode, 1)
-        payload = json.loads(result.stdout)
-        self.assertEqual(payload["status"], "error")
-        self.assertEqual(payload["stage"], "model_load")
-        self.assertIn("missing model files", payload["error"])
-        self.assertNotIn("Traceback", result.stderr)
-        self.assertFalse(output.exists())
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["status"], "error")
+            self.assertEqual(payload["stage"], "model_load")
+            self.assertIn("missing model files", payload["error"])
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse(output.exists())
 
     def test_missing_output_parent_is_not_created_before_model_load(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -51,8 +51,8 @@ class EvaluateCliTests(unittest.TestCase):
                 "--output",
                 output,
             )
-        self.assertEqual(result.returncode, 1)
-        self.assertFalse(output.parent.exists())
+            self.assertEqual(result.returncode, 1)
+            self.assertFalse(output.parent.exists())
 
 
 if __name__ == "__main__":
