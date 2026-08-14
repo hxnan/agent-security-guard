@@ -18,7 +18,7 @@ from guard.eval_dataset import (
     validate_eval_dataset,
 )
 
-DEFAULT_DATASET = REPOSITORY_ROOT / "data" / "eval-v1" / "gold.jsonl"
+DEFAULT_DATASET = REPOSITORY_ROOT / "data" / "eval-v1" / "gold"
 DEFAULT_BLUEPRINT = REPOSITORY_ROOT / "data" / "eval-v1" / "blueprint.jsonl"
 
 
