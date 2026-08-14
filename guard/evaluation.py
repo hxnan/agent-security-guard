@@ -6,6 +6,11 @@ from pathlib import Path
 import time
 from typing import Protocol, Sequence
 
+from .baseline_output import (
+    build_baseline_guard_result,
+    validate_baseline_semantic_consistency,
+    validate_baseline_semantic_object,
+)
 from .baseline_predictor import BaselinePredictionOutcome, PredictionStatus
 from .baseline_prompt import (
     BASELINE_MODEL_VERSION,
@@ -13,11 +18,11 @@ from .baseline_prompt import (
     BASELINE_PROMPT_VERSION,
 )
 from .eval_dataset import EvalGoldRecord
-from .result_parsing import GeneratedResultError, extract_first_json_object, parse_guard_result
+from .result_parsing import GeneratedResultError, extract_first_json_object
 from .taxonomy import Decision, RiskCategory, Severity
 
 
-BASELINE_EVAL_REPORT_VERSION = "baseline-eval-report-v1"
+BASELINE_EVAL_REPORT_VERSION = "baseline-eval-report-v2"
 
 
 class PredictorProtocol(Protocol):
@@ -44,6 +49,8 @@ def _summary_is_compliant(value: object) -> bool:
 def _inspect_generated_output(outcome: BaselinePredictionOutcome) -> dict[str, bool]:
     flags = {
         "json_object": False,
+        "semantic_schema": False,
+        "semantic_consistency": False,
         "guardresult_schema": False,
         "summary_compliant": False,
         "strict_output": outcome.status is PredictionStatus.OK and outcome.result is not None,
@@ -59,7 +66,19 @@ def _inspect_generated_output(outcome: BaselinePredictionOutcome) -> dict[str, b
     flags["json_object"] = True
     flags["summary_compliant"] = _summary_is_compliant(value.get("summary"))
     try:
-        parse_guard_result(outcome.raw_text)
+        semantic = validate_baseline_semantic_object(value)
+    except GeneratedResultError:
+        return flags
+    flags["semantic_schema"] = True
+
+    try:
+        validate_baseline_semantic_consistency(semantic)
+    except GeneratedResultError:
+        return flags
+    flags["semantic_consistency"] = True
+
+    try:
+        build_baseline_guard_result(semantic)
     except GeneratedResultError:
         return flags
     flags["guardresult_schema"] = True
@@ -361,6 +380,12 @@ def evaluate_baseline(
         "status_counts": dict(sorted(statuses.items())),
         "compliance": {
             "json_object_rate": _rate(compliance_counts["json_object"], total),
+            "semantic_schema_rate": _rate(
+                compliance_counts["semantic_schema"], total
+            ),
+            "semantic_consistency_rate": _rate(
+                compliance_counts["semantic_consistency"], total
+            ),
             "guardresult_schema_rate": _rate(
                 compliance_counts["guardresult_schema"], total
             ),
