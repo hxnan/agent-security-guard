@@ -52,6 +52,14 @@ class BaselineSemanticOutputTests(unittest.TestCase):
                 )
                 self.assertEqual(result.confidence, float(confidence))
 
+    def test_boolean_confidence_is_rejected_instead_of_coerced_to_number(self):
+        for confidence in (True, False):
+            with self.subTest(confidence=confidence):
+                with self.assertRaisesRegex(GeneratedResultError, "confidence"):
+                    parse_baseline_semantic_result(
+                        semantic_text(confidence=confidence)
+                    )
+
     def test_system_owned_fields_are_rejected_as_extra_model_fields(self):
         for field, value in (
             ("risk", False),
