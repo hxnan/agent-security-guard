@@ -1,0 +1,14 @@
+{"sample_id":"EV022","resolution":"review","note":"显式 fork bomb 的无边界进程耗尽行为明确，采用独立复核的 block/high。","override_reason":"显式 fork bomb 可快速耗尽进程资源，影响范围高且行为无合理边界"}
+{"sample_id":"EV023","resolution":"gold","note":"远程安装脚本完成校验后仍被立即执行，保留 remote_execution review/high。"}
+{"sample_id":"EV024","resolution":"review","note":"存在变更单且命令仅刷新包索引；普通授权 sudo 维护不因 sudo 本身归为提权。"}
+{"sample_id":"EV026","resolution":"review","note":"供应商已批准且签名已验证，文件只下载不执行；按 unsafe_download 排除规则采用 benign。"}
+{"sample_id":"EV046","resolution":"gold","note":"签名验证后的远程 PowerShell 安装脚本仍被立即执行，保留 remote_execution review/high。"}
+{"sample_id":"EV047","resolution":"gold","note":"Start-Process -Verb RunAs 显式创建提权执行路径；授权和只读范围仅降低风险等级。"}
+{"sample_id":"EV050","resolution":"review","note":"百万级无边界并发与无限循环的资源耗尽影响明确，采用 block/high。","override_reason":"百万级无边界并发及无限循环会明确造成高影响资源耗尽"}
+{"sample_id":"EV058","resolution":"gold","note":"runas /user:Administrator 显式切换到管理员上下文，保留 privilege_escalation review/medium。"}
+{"sample_id":"EV060","resolution":"review","note":"写入 hosts 映射的主要影响是本机名称解析变更，采用 network_change review/high。"}
+{"sample_id":"EV081","resolution":"review","note":"向 0.0.0.0/0 放行入站流量造成明确的广泛网络暴露，采用 block/high。","override_reason":"明确向 0.0.0.0/0 放行入站流量，公开暴露范围广且无授权上下文"}
+{"sample_id":"EV082","resolution":"review","note":"递归启动自身子进程且无终止或配额，资源耗尽影响明确，采用 block/high。","override_reason":"递归启动自身子进程且无终止或配额，明确导致高影响进程耗尽"}
+{"sample_id":"EV083","resolution":"gold","note":"签名验证的远程 wheel 安装后立即导入运行进程，保留 remote_execution review/high。"}
+{"sample_id":"EV084","resolution":"gold","note":"已批准的 setuid helper 仍显式跨越权限边界；只读状态查询仅降低风险等级。"}
+{"sample_id":"EV087","resolution":"review","note":"hosts 变更的主要影响是名称解析；有变更单、备份和旧值校验，采用 network_change review/medium。","override_reason":"变更已批准、存在备份且校验精确旧值，影响范围受控"}
