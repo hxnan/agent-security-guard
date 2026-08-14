@@ -6,13 +6,10 @@ from typing import Protocol, Sequence
 
 from pydantic import BaseModel
 
-from .baseline_prompt import (
-    BASELINE_MODEL_VERSION,
-    BASELINE_POLICY_VERSION,
-    format_baseline_messages,
-)
+from .baseline_output import parse_baseline_semantic_result
+from .baseline_prompt import format_baseline_messages
 from .contracts import GuardRequest, GuardResult
-from .result_parsing import GeneratedResultError, parse_guard_result
+from .result_parsing import GeneratedResultError
 from .taxonomy import Decision
 
 
@@ -76,12 +73,7 @@ class BaselinePredictor:
             )
 
         try:
-            result = parse_guard_result(
-                generation.raw_text,
-                expected_model_version=BASELINE_MODEL_VERSION,
-                expected_policy_version=BASELINE_POLICY_VERSION,
-                require_empty_rule_hits=True,
-            )
+            result = parse_baseline_semantic_result(generation.raw_text)
         except GeneratedResultError as exc:
             return BaselinePredictionOutcome(
                 status=PredictionStatus.PARSE_ERROR,
