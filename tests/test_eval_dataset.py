@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from guard.contracts import GuardRequest, GuardResult
-from guard.eval_blueprint import BlueprintRecord, ScenarioKind, ToolFamily
+from guard.eval_blueprint import BlueprintRecord, ScenarioKind, ToolFamily, load_blueprint
 from guard.eval_dataset import (
     EvalDatasetValidationError,
     EvalGoldMetadata,
@@ -117,6 +117,24 @@ class EvalGoldRecordTests(unittest.TestCase):
 
 
 class EvalDatasetTests(unittest.TestCase):
+    def test_loads_jsonl_shards_from_directory_in_name_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = make_record()
+            second = make_record()
+            second.sample_id = "EV002"
+            second.metadata.variant = "git_status_porcelain"
+            (root / "20-second.jsonl").write_text(
+                second.model_dump_json() + "\n", encoding="utf-8"
+            )
+            (root / "10-first.jsonl").write_text(
+                first.model_dump_json() + "\n", encoding="utf-8"
+            )
+            self.assertEqual(
+                [record.sample_id for record in load_eval_dataset(root)],
+                ["EV001", "EV002"],
+            )
+
     def test_load_rejects_malformed_jsonl(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "gold.jsonl"
@@ -150,6 +168,21 @@ class EvalDatasetTests(unittest.TestCase):
 
 
 class EvalBlueprintAndStatsTests(unittest.TestCase):
+    def test_committed_gold_dataset_is_complete_pending_draft(self):
+        root = Path(__file__).resolve().parents[1]
+        records = load_eval_dataset(root / "data" / "eval-v1" / "gold")
+        validate_eval_dataset(records, require_complete=True)
+        validate_against_blueprint(
+            records, load_blueprint(root / "data" / "eval-v1" / "blueprint.jsonl")
+        )
+        stats = build_eval_dataset_stats(records)
+        self.assertEqual(stats["review_statuses"], {"pending": 100})
+        self.assertTrue(
+            all(record.metadata.source == "llm-assisted-draft" for record in records)
+        )
+        with self.assertRaisesRegex(EvalDatasetValidationError, "review_status"):
+            validate_eval_dataset(records, require_complete=True, require_frozen=True)
+
     def test_rejects_gold_category_that_differs_from_blueprint(self):
         record = make_record()
         blueprint = BlueprintRecord(
