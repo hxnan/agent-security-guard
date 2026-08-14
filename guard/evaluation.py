@@ -1,6 +1,9 @@
 """CPU-testable evaluation loop for the model-only security baseline."""
 
 from collections import Counter
+import json
+from pathlib import Path
+import time
 from typing import Protocol, Sequence
 
 from .baseline_predictor import BaselinePredictionOutcome, PredictionStatus
@@ -21,7 +24,7 @@ class PredictorProtocol(Protocol):
     def predict(self, request) -> BaselinePredictionOutcome: ...
 
 
-def _rate(count: int, total: int) -> float:
+def _rate(count: int | float, total: int | float) -> float:
     return count / total if total else 0.0
 
 
@@ -246,6 +249,77 @@ def _build_safety_metrics(samples: Sequence[dict[str, object]]) -> dict[str, obj
     }
 
 
+def _percentile(values: Sequence[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * percentile
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(ordered) - 1)
+    fraction = position - lower_index
+    return ordered[lower_index] + fraction * (
+        ordered[upper_index] - ordered[lower_index]
+    )
+
+
+def _build_performance_metrics(
+    samples: Sequence[dict[str, object]],
+    *,
+    evaluation_wall_seconds: float,
+) -> dict[str, object]:
+    latencies = [
+        float(sample["elapsed_seconds"])
+        for sample in samples
+        if sample["elapsed_seconds"] is not None
+    ]
+    generated_tokens = [
+        int(sample["generated_tokens"])
+        for sample in samples
+        if sample["generated_tokens"] is not None
+    ]
+    peaks = [
+        float(sample["peak_gpu_memory_mb"])
+        for sample in samples
+        if sample["peak_gpu_memory_mb"] is not None
+    ]
+    total_generation_seconds = sum(latencies)
+    total_tokens = sum(generated_tokens)
+    return {
+        "latency_samples": len(latencies),
+        "mean_latency_seconds": (
+            sum(latencies) / len(latencies) if latencies else None
+        ),
+        "p50_latency_seconds": _percentile(latencies, 0.50),
+        "p95_latency_seconds": _percentile(latencies, 0.95),
+        "total_generated_tokens": total_tokens,
+        "tokens_per_second": (
+            total_tokens / total_generation_seconds
+            if latencies and total_generation_seconds > 0
+            else None
+        ),
+        "peak_gpu_memory_mb": max(peaks) if peaks else None,
+        "evaluation_wall_seconds": evaluation_wall_seconds,
+        "samples_per_second": (
+            len(samples) / evaluation_wall_seconds
+            if evaluation_wall_seconds > 0
+            else None
+        ),
+    }
+
+
+def write_evaluation_report(path: Path, report: dict[str, object]) -> None:
+    """Atomically write a deterministic UTF-8 JSON evaluation report."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def evaluate_baseline(
     records: Sequence[EvalGoldRecord],
     predictor: PredictorProtocol,
@@ -258,6 +332,7 @@ def evaluate_baseline(
     if max_new_tokens < 1:
         raise ValueError("max_new_tokens must be positive")
 
+    started = time.perf_counter()
     samples: list[dict[str, object]] = []
     compliance_counts = Counter()
     statuses = Counter()
@@ -271,6 +346,7 @@ def evaluate_baseline(
             if value:
                 compliance_counts[key] += 1
 
+    evaluation_wall_seconds = time.perf_counter() - started
     total = len(records)
     strict_count = compliance_counts["strict_output"]
     report = {
@@ -298,6 +374,10 @@ def evaluate_baseline(
         "category_metrics": _build_category_metrics(samples),
         "decision_metrics": _build_decision_metrics(samples),
         "safety_metrics": _build_safety_metrics(samples),
+        "performance": _build_performance_metrics(
+            samples,
+            evaluation_wall_seconds=evaluation_wall_seconds,
+        ),
         "samples": samples,
     }
     return report
