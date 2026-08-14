@@ -98,6 +98,12 @@ class BaselineSemanticOutputTests(unittest.TestCase):
         with self.assertRaisesRegex(GeneratedResultError, "summary"):
             parse_baseline_semantic_result(semantic_text(summary="风险" * 16))
 
+    def test_summary_with_surrounding_whitespace_is_rejected_not_rewritten(self):
+        for summary in (" 查看仓库状态", "查看仓库状态 ", "\n查看仓库状态"):
+            with self.subTest(summary=summary):
+                with self.assertRaisesRegex(GeneratedResultError, "summary"):
+                    parse_baseline_semantic_result(semantic_text(summary=summary))
+
     def test_evidence_must_be_string_list_with_at_most_five_items(self):
         with self.assertRaisesRegex(GeneratedResultError, "evidence"):
             parse_baseline_semantic_result(semantic_text(evidence="git status"))
