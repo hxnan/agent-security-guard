@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         records = load_eval_dataset(args.dataset)
         validate_eval_dataset(records)
         answers = load_review_answers(args.answers)
-        disagreements = compare_review_answers(records, answers)
+        comparisons = compare_review_answers(records, answers)
     except (EvalDatasetValidationError, EvalReviewValidationError, OSError) as exc:
         print(
             json.dumps(
@@ -44,15 +44,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    label_disagreements = [item for item in comparisons if item.label_differences]
+    summary_differences = [
+        item.sample_id for item in comparisons if item.summary_differs
+    ]
     payload = {
-        "status": "disputed" if disagreements else "agreed",
+        "status": "disputed" if label_disagreements else "agreed",
         "compared": len(answers),
-        "disagreements": [
-            item.model_dump(mode="json") for item in disagreements
+        "label_disagreements": [
+            item.model_dump(mode="json") for item in label_disagreements
         ],
+        "summary_differences": summary_differences,
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-    return 3 if disagreements else 0
+    return 3 if label_disagreements else 0
 
 
 if __name__ == "__main__":

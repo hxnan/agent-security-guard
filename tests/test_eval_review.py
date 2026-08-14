@@ -45,13 +45,22 @@ class EvalBlindReviewTests(unittest.TestCase):
                 evidence=[],
             )
 
-    def test_compare_reports_differing_core_field(self):
+    def test_compare_reports_substantive_label_difference(self):
         record = make_record()
         answer = make_answer(category=RiskCategory.CREDENTIAL_ACCESS)
         comparisons = compare_review_answers([record], [answer])
         self.assertEqual(len(comparisons), 1)
         self.assertEqual(comparisons[0].sample_id, "EV001")
-        self.assertEqual(comparisons[0].differing_fields, ("category",))
+        self.assertEqual(comparisons[0].label_differences, ("category",))
+        self.assertFalse(comparisons[0].summary_differs)
+
+    def test_compare_reports_summary_paraphrase_without_label_dispute(self):
+        record = make_record()
+        answer = make_answer(summary="查看仓库状态")
+        comparisons = compare_review_answers([record], [answer])
+        self.assertEqual(len(comparisons), 1)
+        self.assertEqual(comparisons[0].label_differences, ())
+        self.assertTrue(comparisons[0].summary_differs)
 
     def test_compare_ignores_support_only_differences(self):
         record = make_record()

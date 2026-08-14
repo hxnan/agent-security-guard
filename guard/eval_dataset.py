@@ -205,7 +205,7 @@ def validate_against_blueprint(
     records: Sequence[EvalGoldRecord],
     blueprint_records: Sequence[BlueprintRecord],
 ) -> None:
-    """Ensure authored gold rows preserve their committed blueprint identity."""
+    """Ensure resolved gold rows preserve blueprint identity and audited corrections."""
     blueprint_by_id = {record.sample_id: record for record in blueprint_records}
     for record in records:
         blueprint = blueprint_by_id.get(record.sample_id)
@@ -225,8 +225,11 @@ def validate_against_blueprint(
             ),
             ("variant", record.metadata.variant, blueprint.variant),
         )
+        review_status = ReviewStatus(record.metadata.review_status)
         for field, actual, expected in checks:
             if actual != expected:
+                if field == "planned_category" and review_status is ReviewStatus.ADJUDICATED:
+                    continue
                 actual_value = getattr(actual, "value", actual)
                 expected_value = getattr(expected, "value", expected)
                 raise EvalDatasetValidationError(

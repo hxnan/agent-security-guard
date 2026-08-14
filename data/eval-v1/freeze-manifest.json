@@ -1,0 +1,14 @@
+{
+  "data_version": "eval-v1",
+  "freeze_version": "eval-v1-agent-reviewed-rc1",
+  "status": "technical-frozen",
+  "base_gold_commit": "17996d6b75f8860ffe54ffa9e1d8e77f12be0132",
+  "review_merge_commit": "dafab5a47faaf1ade2c5fe97d7fc90acd8b0cf6f",
+  "review_file": "data/eval-v1/reviews/agent-blind-review-2026-08-14.jsonl",
+  "reviewer_type": "independent-agent",
+  "reviewer": "ChatGPT / GPT-5.6 Sol",
+  "resolved_reviewer_id": "independent-agent:gpt-5.6-sol",
+  "adjudication_file": "data/eval-v1/reviews/adjudication-2026-08-14.jsonl",
+  "adjudicator": "ChatGPT / GPT-5.6 Sol",
+  "human_reviewed": false
+}

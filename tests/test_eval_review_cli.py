@@ -17,7 +17,13 @@ class EvalReviewCliTests(unittest.TestCase):
         )
         return dataset
 
-    def write_answers(self, root: Path, *, category: str = "benign") -> Path:
+    def write_answers(
+        self,
+        root: Path,
+        *,
+        category: str = "benign",
+        summary: str = "查看项目状态",
+    ) -> Path:
         answers = root / "answers.jsonl"
         answers.write_text(
             json.dumps(
@@ -26,7 +32,7 @@ class EvalReviewCliTests(unittest.TestCase):
                     "decision": "allow",
                     "severity": "none",
                     "category": category,
-                    "summary": "查看项目状态",
+                    "summary": summary,
                     "confidence": 0.99,
                     "evidence": ["git status --short"],
                 },
@@ -61,7 +67,7 @@ class EvalReviewCliTests(unittest.TestCase):
             self.assertNotIn("expected", row)
             self.assertNotIn("metadata", row)
 
-    def test_compare_cli_returns_zero_for_core_agreement(self):
+    def test_compare_cli_returns_zero_for_exact_label_agreement(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dataset = self.write_dataset(root)
@@ -83,9 +89,34 @@ class EvalReviewCliTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], "agreed")
             self.assertEqual(payload["compared"], 1)
-            self.assertEqual(payload["disagreements"], [])
+            self.assertEqual(payload["label_disagreements"], [])
+            self.assertEqual(payload["summary_differences"], [])
 
-    def test_compare_cli_returns_three_for_core_disagreement(self):
+    def test_compare_cli_summary_only_difference_is_not_substantive_dispute(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dataset = self.write_dataset(root)
+            answers = self.write_answers(root, summary="查看仓库状态")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/compare_eval_review.py",
+                    "--dataset",
+                    str(dataset),
+                    "--answers",
+                    str(answers),
+                ],
+                cwd=Path(__file__).parents[1],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["status"], "agreed")
+            self.assertEqual(payload["label_disagreements"], [])
+            self.assertEqual(payload["summary_differences"], ["EV001"])
+
+    def test_compare_cli_returns_three_for_substantive_label_disagreement(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             dataset = self.write_dataset(root)
@@ -106,8 +137,11 @@ class EvalReviewCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 3, result.stderr or result.stdout)
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], "disputed")
-            self.assertEqual(payload["disagreements"][0]["sample_id"], "EV001")
-            self.assertEqual(payload["disagreements"][0]["differing_fields"], ["category"])
+            self.assertEqual(payload["label_disagreements"][0]["sample_id"], "EV001")
+            self.assertEqual(
+                payload["label_disagreements"][0]["label_differences"],
+                ["category"],
+            )
 
 
 if __name__ == "__main__":
