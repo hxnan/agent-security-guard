@@ -2,7 +2,7 @@
 
 面向 Agent 工具执行环节的本地轻量级安全护栏。在 Shell、PowerShell、CMD、Python 或其他工具调用真正执行前，先进行静态风险分析，输出稳定的三态决策：`allow`、`review`、`block`。
 
-当前工程阶段进入 **P2 Baseline 评估**：V1 输入输出契约、风险分类和 Eval V1 已具备可重复的 technical freeze；Model-only Baseline Predictor 已完成 CPU/CI 工程实现，下一步是 100 条正式 Evaluation Engine 和目标 GPU 基线实测。
+当前工程阶段处于 **P2 Baseline 评估**：V1 输入输出契约、风险分类和 Eval V1 technical freeze 已固定；Model-only Baseline Predictor 与 100 条 Evaluation Engine 已完成 CPU/CI 工程实现，下一步是目标 RTX 1000 Ada 6GB 上的正式 Qwen2.5-1.5B-Instruct Baseline 实测。
 
 ## 当前能力
 
@@ -11,12 +11,13 @@
 - 使用 Pydantic 校验请求和结果，摘要限制为 30 个字符。
 - 提供本地模型文件与 CUDA 环境检查。
 - 单元测试和 GitHub Actions 不依赖模型权重或 GPU。
-- 已建立 EV001–EV100 共 100 条 Eval V1 场景、首轮 Gold Draft、机器语义复核和独立 Agent 盲审证据。
+- 已建立 EV001–EV100 共 100 条 Eval V1 场景、Gold Draft、机器语义复核、独立 Agent 盲审和显式 adjudication。
 - 独立盲审在 `decision / severity / category` 三个实质标签上有 86/100 一致；14 条分歧已显式裁决。
-- `scripts/validate_eval_freeze.py` 可从原始 Gold、review 和 adjudication 确定性重建并验证 100 条 technical-freeze 视图。
-- 已实现固定 Prompt、严格 GuardResult 解析、失败安全 Predictor、lazy local Transformers/Qwen backend 和单请求 Baseline CLI。
+- `scripts/validate_eval_freeze.py` 可从原始 Gold、review 和 adjudication 确定性重建 100 条 technical-freeze 视图。
+- 已实现固定 Baseline Prompt、严格 GuardResult 解析、失败安全 Predictor、lazy local Transformers/Qwen backend。
+- 已实现 `scripts/evaluate.py`：顺序评估 100 条冻结样本、单条失败不中断、输出质量/安全/格式/延迟/吞吐/显存指标和逐样本报告。
 
-项目**不会执行待检测命令**。已经验证本地 QLoRA Adapter 的训练和单样本推理工程链路；正式 Baseline 质量与性能仍需 P2 Evaluation Engine + 目标 GPU 实测。
+项目**不会执行待检测命令**。已经验证本地 QLoRA Adapter 的训练和单样本推理工程链路；正式 Baseline 的真实质量与性能数据将在目标 GPU 实测后形成。
 
 > Eval V1 当前是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。`data/eval-v1/freeze-manifest.json` 明确记录 `human_reviewed=false`。
 
@@ -102,9 +103,9 @@ git diff -- schemas/v1
 
 ## Eval V1
 
-### 规划与原始 Draft
+### 规划、Draft 与 technical freeze
 
-100 条场景规划位于 `data/eval-v1/blueprint.jsonl`。首轮具体请求和期望结果位于 `data/eval-v1/gold/`，原始文件仍保留 authoring provenance：
+100 条场景规划位于 `data/eval-v1/blueprint.jsonl`。首轮具体请求和期望结果位于 `data/eval-v1/gold/`，原始文件保留 authoring provenance：
 
 ```text
 source = llm-assisted-draft
@@ -121,34 +122,11 @@ python scripts/validate_eval_dataset.py --require-complete
 python scripts/report_eval_dataset.py
 ```
 
-### 独立盲审
-
-盲审导出只包含 `sample_id + request`：
-
-```bash
-python scripts/export_eval_review_packet.py --output /tmp/eval-v1-blind.jsonl
-```
-
-独立 reviewer 结果已经版本化保存于：
+独立 reviewer 结果保存在：
 
 ```text
 data/eval-v1/reviews/agent-blind-review-2026-08-14.jsonl
 ```
-
-当前比较工具把实质安全标签与自然语言摘要分开：
-
-```bash
-python scripts/compare_eval_review.py \
-  --answers data/eval-v1/reviews/agent-blind-review-2026-08-14.jsonl
-```
-
-- `decision / severity / category` 任一不同才属于 substantive label disagreement；
-- `summary` 同义改写单独报告，不会独自触发争议；
-- `confidence / evidence` 是支持字段，不作为标签一致门禁。
-
-本次独立 Agent 盲审得到 **86 条实质标签一致、14 条实质标签分歧**。
-
-### Adjudication 与 technical freeze
 
 14 条分歧的显式裁决位于：
 
@@ -177,30 +155,20 @@ raw Gold Draft
 python scripts/validate_eval_freeze.py
 ```
 
-成功结果要求：
+成功结果要求：100 条 resolved records、`86 agreed + 14 adjudicated`、0 条 `pending/disputed`、42 `allow`、33 `review`、25 `block`，并继续覆盖全部 12 个风险类别。只有显式 `adjudicated` 样本可以修正原 `planned_category`，且 `human_reviewed=false`。
 
-- 100 条 resolved records；
-- `86 agreed + 14 adjudicated`；
-- 0 条 `pending/disputed`；
-- 42 `allow`、33 `review`、25 `block`；
-- 12 个风险类别继续全部覆盖；
-- 所有契约和 Blueprint 身份字段合法；
-- 只有显式 `adjudicated` 样本可以修正原 `planned_category`；
-- `human_reviewed=false`。
+## P2 Model-only Baseline
 
-该 technical freeze 可以用于 P2 的可重复模型基线评估，但不能宣传为 human-reviewed Eval V1。
-
-## P2 Model-only Baseline Predictor
-
-Baseline Predictor 使用三个固定版本：
+固定版本：
 
 ```text
 prompt_version = baseline-prompt-v1
 model_version  = qwen2.5-1.5b-instruct-baseline-v1
 policy_version = model-only-baseline-v1
+report_version = baseline-eval-report-v1
 ```
 
-关键边界：
+### Predictor 边界
 
 - 待检测命令/代码始终作为不可信 JSON 数据进入 Prompt；
 - 模型只能返回一个严格的 GuardResult V1 JSON object；
@@ -219,15 +187,40 @@ JSON
 python scripts/predict_baseline.py --request /tmp/guard-request.json
 ```
 
-也可显式指定模型：
+### Formal Evaluation Engine
+
+`guard/eval_freeze.py` 提供可复用的 resolved-freeze loader，Evaluator 不直接把 pending raw Gold 当作正式答案。
+
+`guard/evaluation.py` / `scripts/evaluate.py` 提供：
+
+- Risk：TP/TN/FP/FN、Precision、Recall、F1、FPR、FNR，并显式报告 strict-valid coverage；
+- Category：12 类 confusion matrix、support、valid coverage、per-category Recall/F1、Macro-F1；
+- Decision：valid 模型决策准确率与全量 fail-safe effective decision 准确率；
+- Safety：critical / high-or-critical `allow` miss 数量与比例；
+- Compliance：JSON object、GuardResult Schema、中文摘要、strict Baseline 输出合规率；
+- Performance：mean/P50/P95 latency、tokens/s、最大 peak GPU memory、wall throughput；
+- 100 条逐样本明细，包括 expected、predicted、错误、fallback、原始生成文本和 runtime metrics。
+
+单条 `parse_error` / `backend_error` 不会中断后续样本；无效输出不被伪造成 benign/risky 分类标签，但 effective decision 使用 `review` fail-safe。
+
+正式本地 Baseline：
 
 ```bash
-python scripts/predict_baseline.py \
-  --request /tmp/guard-request.json \
-  --model-path /你的绝对路径/Qwen2.5-1.5B-Instruct
+python scripts/validate_eval_freeze.py
+python scripts/check_environment.py
+python scripts/evaluate.py \
+  --output artifacts/baseline-eval-v1/report.json
 ```
 
-当前 runtime backend 使用本地文件、BF16、CUDA 和 greedy generation。目标 6GB GPU 的真实 Baseline 质量/延迟/显存数据将在 Evaluation Engine 完成后一次性验证。
+如果模型不在默认目录：
+
+```bash
+export AGENT_SECURITY_MODEL_PATH=/你的绝对路径/Qwen2.5-1.5B-Instruct
+python scripts/evaluate.py \
+  --output artifacts/baseline-eval-v1/report.json
+```
+
+报告默认就在 `artifacts/baseline-eval-v1/report.json`；`artifacts/` 已被 Git 忽略。stdout 只打印关键摘要指标，完整 100 条明细保存在 JSON 报告中。
 
 ## 最小 QLoRA 训练闭环
 
@@ -253,17 +246,16 @@ python scripts/smoke_test_adapter.py
 
 ## 目录
 
-- `guard/`：稳定数据契约、风险分类、评估/裁决、Baseline Prompt/Predictor/backend 逻辑。
+- `guard/`：稳定数据契约、风险分类、Eval freeze、Baseline Prompt/Predictor/backend/Evaluation 逻辑。
 - `data/`：版本化评估规划、Gold Draft、review、adjudication 和 freeze provenance。
 - `docs/`：技术方案、风险标准、标注规范与设计文档。
-- `scripts/`：开发、校验、预测、训练和评估入口。
+- `scripts/`：开发、校验、预测、训练和正式评估入口。
 - `schemas/`：语言无关的 V1 请求/结果契约。
 - `tests/`：无需 GPU 的单元测试。
 - `models/`：本地模型目录；权重被 Git 忽略。
 
 ## 近期路线
 
-1. 完成 `evaluate.py` 和可重复 Baseline 报告指标。
-2. 在目标 6GB GPU 上运行第一次正式 Qwen2.5-1.5B-Instruct Baseline。
-3. 根据真实错误分布实现 Rule Engine + Policy Fusion，并与 Model-only Baseline 对比。
-4. 根据 Baseline/规则错误分析生产正式训练集，再进入正式 QLoRA。
+1. 在目标 6GB GPU 上运行第一次正式 Qwen2.5-1.5B-Instruct Baseline，获取真实质量/延迟/显存报告。
+2. 根据真实错误分布实现 Rule Engine + Policy Fusion，并与 Model-only Baseline 对比。
+3. 根据 Baseline/规则错误分析生产正式训练集，再进入正式 QLoRA。
