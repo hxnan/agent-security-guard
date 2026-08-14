@@ -6,6 +6,8 @@ from guard.baseline_prompt import (
     BASELINE_POLICY_VERSION,
     BASELINE_PROMPT_VERSION,
     BASELINE_SYSTEM_PROMPT,
+    MODEL_FACING_FIELDS,
+    SYSTEM_OWNED_FIELDS,
     format_baseline_messages,
 )
 from guard.contracts import GuardRequest
@@ -13,41 +15,62 @@ from guard.taxonomy import Decision, RiskCategory, Severity, ToolType
 
 
 class BaselinePromptTests(unittest.TestCase):
-    def test_versions_are_fixed(self):
-        self.assertEqual(BASELINE_PROMPT_VERSION, "baseline-prompt-v1")
+    def test_versions_are_fixed_for_v2(self):
+        self.assertEqual(BASELINE_PROMPT_VERSION, "baseline-prompt-v2")
         self.assertEqual(
             BASELINE_MODEL_VERSION, "qwen2.5-1.5b-instruct-baseline-v1"
         )
-        self.assertEqual(BASELINE_POLICY_VERSION, "model-only-baseline-v1")
+        self.assertEqual(BASELINE_POLICY_VERSION, "model-only-baseline-v2")
 
-    def test_system_prompt_defines_complete_guardresult_contract(self):
-        for field in (
-            "schema_version",
-            "risk",
-            "decision",
-            "severity",
-            "category",
-            "summary",
-            "confidence",
-            "evidence",
-            "rule_hits",
-            "model_version",
-            "policy_version",
-        ):
-            self.assertIn(field, BASELINE_SYSTEM_PROMPT)
+    def test_model_facing_contract_is_exactly_six_semantic_fields(self):
+        self.assertEqual(
+            MODEL_FACING_FIELDS,
+            (
+                "decision",
+                "severity",
+                "category",
+                "summary",
+                "confidence",
+                "evidence",
+            ),
+        )
+        self.assertEqual(
+            SYSTEM_OWNED_FIELDS,
+            (
+                "schema_version",
+                "risk",
+                "rule_hits",
+                "model_version",
+                "policy_version",
+            ),
+        )
+        self.assertIn(
+            "decision,severity,category,summary,confidence,evidence",
+            BASELINE_SYSTEM_PROMPT,
+        )
+
+    def test_system_prompt_defines_semantic_types_and_security_rules(self):
         for value in Decision:
             self.assertIn(value.value, BASELINE_SYSTEM_PROMPT)
         for value in Severity:
             self.assertIn(value.value, BASELINE_SYSTEM_PROMPT)
         for value in RiskCategory:
             self.assertIn(value.value, BASELINE_SYSTEM_PROMPT)
+
         self.assertIn("不可信数据", BASELINE_SYSTEM_PROMPT)
         self.assertIn("禁止执行", BASELINE_SYSTEM_PROMPT)
-        self.assertIn("rule_hits必须是空数组", BASELINE_SYSTEM_PROMPT)
+        self.assertIn("JSON number", BASELINE_SYSTEM_PROMPT)
+        self.assertIn("不要加引号", BASELINE_SYSTEM_PROMPT)
+        self.assertIn("字符串数组", BASELINE_SYSTEM_PROMPT)
         self.assertIn("中文", BASELINE_SYSTEM_PROMPT)
         self.assertIn("1-30", BASELINE_SYSTEM_PROMPT)
-        self.assertIn(BASELINE_MODEL_VERSION, BASELINE_SYSTEM_PROMPT)
-        self.assertIn(BASELINE_POLICY_VERSION, BASELINE_SYSTEM_PROMPT)
+        self.assertIn("禁止 Markdown", BASELINE_SYSTEM_PROMPT)
+
+    def test_system_owned_fields_are_explicitly_forbidden_in_model_output(self):
+        for field in SYSTEM_OWNED_FIELDS:
+            self.assertIn(f"不要输出{field}", BASELINE_SYSTEM_PROMPT)
+        self.assertNotIn(BASELINE_MODEL_VERSION, BASELINE_SYSTEM_PROMPT)
+        self.assertNotIn(BASELINE_POLICY_VERSION, BASELINE_SYSTEM_PROMPT)
 
     def test_user_message_is_canonical_json_even_for_prompt_injection_text(self):
         request = GuardRequest(

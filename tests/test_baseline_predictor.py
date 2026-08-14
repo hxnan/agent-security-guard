@@ -13,17 +13,12 @@ from guard.taxonomy import Decision, ToolType
 
 def valid_text(**overrides):
     payload = {
-        "schema_version": "1.0",
-        "risk": False,
         "decision": "allow",
         "severity": "none",
         "category": "benign",
         "summary": "查看仓库状态",
         "confidence": 0.99,
         "evidence": ["git status --short"],
-        "rule_hits": [],
-        "model_version": BASELINE_MODEL_VERSION,
-        "policy_version": BASELINE_POLICY_VERSION,
     }
     payload.update(overrides)
     return json.dumps(payload, ensure_ascii=False)
@@ -51,10 +46,10 @@ def request(command="git status --short"):
 
 
 class BaselinePredictorTests(unittest.TestCase):
-    def test_valid_generation_returns_result_and_metrics(self):
+    def test_valid_semantic_generation_returns_enveloped_result_and_metrics(self):
         backend = FakeBackend(
             GenerationResult(
-                raw_text="prefix " + valid_text() + " suffix",
+                raw_text="prefix " + valid_text(confidence="0.95") + " suffix",
                 elapsed_seconds=0.125,
                 generated_tokens=42,
                 peak_gpu_memory_mb=1234.5,
@@ -65,7 +60,12 @@ class BaselinePredictorTests(unittest.TestCase):
         self.assertEqual(outcome.status, PredictionStatus.OK)
         self.assertIsNone(outcome.fallback_decision)
         self.assertIsNone(outcome.error)
+        self.assertFalse(outcome.result.risk)
         self.assertEqual(outcome.result.category.value, "benign")
+        self.assertEqual(outcome.result.confidence, 0.95)
+        self.assertEqual(outcome.result.rule_hits, [])
+        self.assertEqual(outcome.result.model_version, BASELINE_MODEL_VERSION)
+        self.assertEqual(outcome.result.policy_version, BASELINE_POLICY_VERSION)
         self.assertEqual(outcome.raw_text, backend.result.raw_text)
         self.assertEqual(outcome.elapsed_seconds, 0.125)
         self.assertEqual(outcome.generated_tokens, 42)
@@ -100,10 +100,34 @@ class BaselinePredictorTests(unittest.TestCase):
         self.assertEqual(outcome.elapsed_seconds, 0.2)
         self.assertEqual(outcome.generated_tokens, 5)
 
-    def test_wrong_generated_provenance_is_parse_error(self):
+    def test_model_emitted_system_owned_field_is_parse_error(self):
+        for field, value in (
+            ("risk", False),
+            ("model_version", "injected-model"),
+            ("rule_hits", ["pretend-rule"]),
+        ):
+            with self.subTest(field=field):
+                backend = FakeBackend(
+                    GenerationResult(
+                        raw_text=valid_text(**{field: value}),
+                        elapsed_seconds=0.1,
+                        generated_tokens=10,
+                    )
+                )
+                outcome = BaselinePredictor(backend).predict(request())
+                self.assertEqual(outcome.status, PredictionStatus.PARSE_ERROR)
+                self.assertEqual(outcome.fallback_decision, Decision.REVIEW)
+                self.assertIn(field, outcome.error)
+
+    def test_contradictory_semantic_labels_fail_safe_to_review(self):
         backend = FakeBackend(
             GenerationResult(
-                raw_text=valid_text(model_version="injected-model"),
+                raw_text=valid_text(
+                    category="unsafe_download",
+                    decision="allow",
+                    severity="medium",
+                    summary="下载未验证文件",
+                ),
                 elapsed_seconds=0.1,
                 generated_tokens=10,
             )
@@ -111,19 +135,7 @@ class BaselinePredictorTests(unittest.TestCase):
         outcome = BaselinePredictor(backend).predict(request())
         self.assertEqual(outcome.status, PredictionStatus.PARSE_ERROR)
         self.assertEqual(outcome.fallback_decision, Decision.REVIEW)
-        self.assertIn("model_version", outcome.error)
-
-    def test_nonempty_rule_hits_is_parse_error(self):
-        backend = FakeBackend(
-            GenerationResult(
-                raw_text=valid_text(rule_hits=["pretend-rule"]),
-                elapsed_seconds=0.1,
-                generated_tokens=10,
-            )
-        )
-        outcome = BaselinePredictor(backend).predict(request())
-        self.assertEqual(outcome.status, PredictionStatus.PARSE_ERROR)
-        self.assertIn("rule_hits", outcome.error)
+        self.assertIn("non-benign", outcome.error)
 
     def test_prompt_injection_text_remains_untrusted_user_json(self):
         backend = FakeBackend(

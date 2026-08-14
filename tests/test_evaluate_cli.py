@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -6,13 +7,32 @@ import tempfile
 import unittest
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_evaluate_module():
+    path = REPOSITORY_ROOT / "scripts" / "evaluate.py"
+    spec = importlib.util.spec_from_file_location("evaluate_script", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 class EvaluateCliTests(unittest.TestCase):
     def run_cli(self, *args):
         return subprocess.run(
             [sys.executable, "scripts/evaluate.py", *map(str, args)],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=REPOSITORY_ROOT,
             text=True,
             capture_output=True,
+        )
+
+    def test_default_report_path_is_baseline_v2(self):
+        module = load_evaluate_module()
+        self.assertEqual(
+            module.DEFAULT_OUTPUT,
+            REPOSITORY_ROOT / "artifacts" / "baseline-eval-v2" / "report.json",
         )
 
     def test_nonpositive_max_new_tokens_exits_two_before_model_loading(self):

@@ -13,6 +13,16 @@ from guard.taxonomy import Decision, RiskCategory, Severity
 from tests.test_eval_dataset import make_record
 
 
+SEMANTIC_FIELDS = (
+    "decision",
+    "severity",
+    "category",
+    "summary",
+    "confidence",
+    "evidence",
+)
+
+
 def valid_result(**overrides):
     payload = {
         "schema_version": "1.0",
@@ -31,12 +41,19 @@ def valid_result(**overrides):
     return GuardResult.model_validate(payload)
 
 
+def semantic_payload(result: GuardResult, **overrides):
+    dumped = result.model_dump(mode="json")
+    payload = {field: dumped[field] for field in SEMANTIC_FIELDS}
+    payload.update(overrides)
+    return payload
+
+
 def ok_outcome(**result_overrides):
     result = valid_result(**result_overrides)
     return BaselinePredictionOutcome(
         status=PredictionStatus.OK,
         result=result,
-        raw_text=json.dumps(result.model_dump(mode="json"), ensure_ascii=False),
+        raw_text=json.dumps(semantic_payload(result), ensure_ascii=False),
         elapsed_seconds=0.1,
         generated_tokens=10,
         peak_gpu_memory_mb=100.0,
@@ -80,19 +97,25 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
             make_record(sample_id="EV001"),
             make_record(sample_id="EV002", metadata__variant="git_status_short_2"),
             make_record(sample_id="EV003", metadata__variant="git_status_short_3"),
+            make_record(sample_id="EV004", metadata__variant="git_status_short_4"),
         ]
 
     def test_evaluation_continues_after_parse_and_backend_failures(self):
-        wrong_provenance = valid_result(model_version="wrong-model")
+        contradictory = {
+            "decision": "allow",
+            "severity": "medium",
+            "category": "unsafe_download",
+            "summary": "下载未验证文件",
+            "confidence": 0.9,
+            "evidence": ["curl file"],
+        }
         outcomes = [
             ok_outcome(),
             BaselinePredictionOutcome(
                 status=PredictionStatus.PARSE_ERROR,
                 fallback_decision=Decision.REVIEW,
-                error="model_version mismatch",
-                raw_text=json.dumps(
-                    wrong_provenance.model_dump(mode="json"), ensure_ascii=False
-                ),
+                error="non-benign requires review or block",
+                raw_text=json.dumps(contradictory, ensure_ascii=False),
                 elapsed_seconds=0.2,
                 generated_tokens=20,
                 peak_gpu_memory_mb=150.0,
@@ -106,7 +129,7 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
         predictor = SequencePredictor(outcomes)
 
         report = evaluate_baseline(
-            self.records(),
+            self.records()[:3],
             predictor,
             freeze_version="eval-v1-agent-reviewed-rc1",
             max_new_tokens=256,
@@ -138,6 +161,7 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
             max_new_tokens=192,
             environment={"python_version": "test-python", "device": "fake"},
         )
+        self.assertEqual(BASELINE_EVAL_REPORT_VERSION, "baseline-eval-report-v2")
         self.assertEqual(report["report_version"], BASELINE_EVAL_REPORT_VERSION)
         self.assertEqual(report["prompt_version"], BASELINE_PROMPT_VERSION)
         self.assertEqual(report["model_version"], BASELINE_MODEL_VERSION)
@@ -146,28 +170,44 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
         self.assertEqual(report["max_new_tokens"], 192)
         self.assertEqual(report["environment"]["device"], "fake")
 
-    def test_compliance_distinguishes_json_schema_summary_and_strict_output(self):
-        schema_valid_wrong_provenance = valid_result(model_version="other-model")
+    def test_compliance_reports_each_v2_semantic_stage_separately(self):
+        valid = ok_outcome()
+        inconsistent_payload = {
+            "decision": "allow",
+            "severity": "medium",
+            "category": "unsafe_download",
+            "summary": "下载未验证文件",
+            "confidence": "0.85",
+            "evidence": ["curl file"],
+        }
+        schema_invalid_payload = {
+            "decision": "allow",
+            "severity": "none",
+            "category": "benign",
+            "summary": "查看仓库状态",
+            "confidence": 0.99,
+            "evidence": ["git status --short"],
+            "risk": False,
+        }
         outcomes = [
-            ok_outcome(),
+            valid,
             BaselinePredictionOutcome(
                 status=PredictionStatus.PARSE_ERROR,
                 fallback_decision=Decision.REVIEW,
-                error="model_version mismatch",
-                raw_text=json.dumps(
-                    schema_valid_wrong_provenance.model_dump(mode="json"),
-                    ensure_ascii=False,
-                ),
-                elapsed_seconds=0.2,
-                generated_tokens=12,
+                error="semantic contradiction",
+                raw_text=json.dumps(inconsistent_payload, ensure_ascii=False),
+            ),
+            BaselinePredictionOutcome(
+                status=PredictionStatus.PARSE_ERROR,
+                fallback_decision=Decision.REVIEW,
+                error="extra semantic field",
+                raw_text=json.dumps(schema_invalid_payload, ensure_ascii=False),
             ),
             BaselinePredictionOutcome(
                 status=PredictionStatus.PARSE_ERROR,
                 fallback_decision=Decision.REVIEW,
                 error="no JSON",
                 raw_text="plain text only",
-                elapsed_seconds=0.3,
-                generated_tokens=4,
             ),
         ]
         report = evaluate_baseline(
@@ -177,17 +217,20 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
             max_new_tokens=256,
         )
         compliance = report["compliance"]
-        self.assertAlmostEqual(compliance["json_object_rate"], 2 / 3)
-        self.assertAlmostEqual(compliance["guardresult_schema_rate"], 2 / 3)
-        self.assertAlmostEqual(compliance["summary_compliance_rate"], 2 / 3)
-        self.assertAlmostEqual(compliance["strict_output_rate"], 1 / 3)
-        self.assertAlmostEqual(compliance["valid_output_rate"], 1 / 3)
+        self.assertAlmostEqual(compliance["json_object_rate"], 3 / 4)
+        self.assertAlmostEqual(compliance["semantic_schema_rate"], 2 / 4)
+        self.assertAlmostEqual(compliance["semantic_consistency_rate"], 1 / 4)
+        self.assertAlmostEqual(compliance["guardresult_schema_rate"], 1 / 4)
+        self.assertAlmostEqual(compliance["summary_compliance_rate"], 3 / 4)
+        self.assertAlmostEqual(compliance["strict_output_rate"], 1 / 4)
+        self.assertAlmostEqual(compliance["valid_output_rate"], 1 / 4)
 
     def test_summary_compliance_requires_chinese_and_length_bound(self):
-        english_payload = valid_result().model_dump(mode="json")
-        english_payload["summary"] = "read repository status"
-        long_payload = valid_result().model_dump(mode="json")
-        long_payload["summary"] = "这是一个超过三十个字符的中文安全摘要用于验证长度边界而不是合法输出文本示例"
+        english_payload = semantic_payload(valid_result(), summary="read repository status")
+        long_payload = semantic_payload(
+            valid_result(),
+            summary="这是一个超过三十个字符的中文安全摘要用于验证长度边界而不是合法输出文本示例",
+        )
         outcomes = [
             BaselinePredictionOutcome(
                 status=PredictionStatus.PARSE_ERROR,
@@ -209,6 +252,7 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
             max_new_tokens=256,
         )
         self.assertEqual(report["compliance"]["json_object_rate"], 1.0)
+        self.assertEqual(report["compliance"]["semantic_schema_rate"], 0.0)
         self.assertEqual(report["compliance"]["summary_compliance_rate"], 0.0)
 
 
