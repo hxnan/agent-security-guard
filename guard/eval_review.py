@@ -12,7 +12,7 @@ from .taxonomy import Decision, RiskCategory, Severity
 
 
 _ALLOWED_CONFIDENCE = {0.50, 0.60, 0.75, 0.90, 0.99}
-_CORE_FIELDS = ("decision", "severity", "category", "summary")
+_LABEL_FIELDS = ("decision", "severity", "category")
 
 
 class EvalReviewValidationError(ValueError):
@@ -54,10 +54,11 @@ class EvalReviewAnswer(BaseModel):
 
 
 class EvalReviewComparison(BaseModel):
-    """Core-field disagreement for one independently reviewed sample."""
+    """Substantive label and wording differences for one reviewed sample."""
 
     sample_id: str = Field(pattern=r"^EV[0-9]{3}$")
-    differing_fields: tuple[str, ...]
+    label_differences: tuple[str, ...]
+    summary_differs: bool
 
 
 def build_blind_review_packet(
@@ -98,7 +99,7 @@ def compare_review_answers(
     records: Sequence[EvalGoldRecord],
     answers: Sequence[EvalReviewAnswer],
 ) -> list[EvalReviewComparison]:
-    """Return only disagreements in the four Annotation Guideline core fields."""
+    """Compare substantive labels while reporting summary wording separately."""
     gold_by_id = {record.sample_id: record for record in records}
     seen: set[str] = set()
     comparisons: list[EvalReviewComparison] = []
@@ -115,16 +116,18 @@ def compare_review_answers(
                 f"review answer references unknown sample_id {answer.sample_id}"
             )
 
-        differing_fields = tuple(
+        label_differences = tuple(
             field
-            for field in _CORE_FIELDS
+            for field in _LABEL_FIELDS
             if getattr(answer, field) != getattr(gold.expected, field)
         )
-        if differing_fields:
+        summary_differs = answer.summary != gold.expected.summary
+        if label_differences or summary_differs:
             comparisons.append(
                 EvalReviewComparison(
                     sample_id=answer.sample_id,
-                    differing_fields=differing_fields,
+                    label_differences=label_differences,
+                    summary_differs=summary_differs,
                 )
             )
 
