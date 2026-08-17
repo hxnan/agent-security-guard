@@ -132,10 +132,7 @@ def _performance(
         for sample in samples
         if sample["model_elapsed_seconds"] is not None
     ]
-    tokens = sum(
-        int(sample["generated_tokens"] or 0)
-        for sample in samples
-    )
+    tokens = sum(int(sample["generated_tokens"] or 0) for sample in samples)
     peaks = [
         float(sample["peak_gpu_memory_mb"])
         for sample in samples
@@ -172,6 +169,7 @@ def evaluate_fusion(
     model_invocation_count = 0
     model_repair_attempt_count = 0
     model_repair_success_count = 0
+    rule_error_count = 0
     benign_false_positives: list[dict[str, str]] = []
     high_risk_allow_misses: list[dict[str, str]] = []
 
@@ -185,6 +183,8 @@ def evaluate_fusion(
         )
         source = outcome.source.value
         source_counts[source] += 1
+        if outcome.rule_errors:
+            rule_error_count += 1
         if outcome.source is FusionSource.RULE and outcome.selected_rule_id:
             per_rule_contribution[outcome.selected_rule_id] += 1
         if outcome.model_invoked:
@@ -255,6 +255,7 @@ def evaluate_fusion(
                 "effective_decision": effective_decision.value,
                 "matched_rule_ids": [match.rule_id for match in outcome.rule_matches],
                 "selected_rule_id": outcome.selected_rule_id,
+                "rule_errors": list(outcome.rule_errors),
                 "model_invoked": outcome.model_invoked,
                 "model_repair_attempted": bool(
                     model_outcome and model_outcome.repair_attempted
@@ -278,9 +279,7 @@ def evaluate_fusion(
             }
         )
 
-    wall_seconds = (
-        time.perf_counter() - started if started is not None else None
-    )
+    wall_seconds = time.perf_counter() - started if started is not None else None
     total = len(records)
     valid = [sample for sample in samples if sample["predicted"] is not None]
     effective_correct = sum(
@@ -298,6 +297,8 @@ def evaluate_fusion(
         "rule_short_circuit_rate": _rate(rule_short_circuit_count, total),
         "model_invocation_count": model_invocation_count,
         "model_invocation_rate": _rate(model_invocation_count, total),
+        "rule_error_count": rule_error_count,
+        "rule_error_rate": _rate(rule_error_count, total),
         "valid_output_count": len(valid),
         "valid_output_rate": _rate(len(valid), total),
         "per_rule_contribution": dict(sorted(per_rule_contribution.items())),
