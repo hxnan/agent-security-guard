@@ -6,6 +6,7 @@ from guard.baseline_prompt import (
     BASELINE_MODEL_VERSION,
     BASELINE_POLICY_VERSION,
     BASELINE_PROMPT_VERSION,
+    BASELINE_REPAIR_PROMPT_VERSION,
 )
 from guard.contracts import GuardResult
 from guard.evaluation import BASELINE_EVAL_REPORT_VERSION, evaluate_baseline
@@ -50,10 +51,12 @@ def semantic_payload(result: GuardResult, **overrides):
 
 def ok_outcome(**result_overrides):
     result = valid_result(**result_overrides)
+    raw_text = json.dumps(semantic_payload(result), ensure_ascii=False)
     return BaselinePredictionOutcome(
         status=PredictionStatus.OK,
         result=result,
-        raw_text=json.dumps(semantic_payload(result), ensure_ascii=False),
+        raw_text=raw_text,
+        initial_raw_text=raw_text,
         elapsed_seconds=0.1,
         generated_tokens=10,
         peak_gpu_memory_mb=100.0,
@@ -161,9 +164,12 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
             max_new_tokens=192,
             environment={"python_version": "test-python", "device": "fake"},
         )
-        self.assertEqual(BASELINE_EVAL_REPORT_VERSION, "baseline-eval-report-v2")
+        self.assertEqual(BASELINE_EVAL_REPORT_VERSION, "baseline-eval-report-v2.1")
         self.assertEqual(report["report_version"], BASELINE_EVAL_REPORT_VERSION)
         self.assertEqual(report["prompt_version"], BASELINE_PROMPT_VERSION)
+        self.assertEqual(
+            report["repair_prompt_version"], BASELINE_REPAIR_PROMPT_VERSION
+        )
         self.assertEqual(report["model_version"], BASELINE_MODEL_VERSION)
         self.assertEqual(report["policy_version"], BASELINE_POLICY_VERSION)
         self.assertEqual(report["freeze_version"], "eval-v1-agent-reviewed-rc1")
@@ -224,6 +230,79 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
         self.assertAlmostEqual(compliance["summary_compliance_rate"], 3 / 4)
         self.assertAlmostEqual(compliance["strict_output_rate"], 1 / 4)
         self.assertAlmostEqual(compliance["valid_output_rate"], 1 / 4)
+
+    def test_repair_metrics_distinguish_first_pass_from_terminal_success(self):
+        first_pass = ok_outcome()
+
+        repaired_result = valid_result()
+        repaired_raw = json.dumps(
+            semantic_payload(repaired_result), ensure_ascii=False
+        )
+        repaired = BaselinePredictionOutcome(
+            status=PredictionStatus.OK,
+            result=repaired_result,
+            raw_text=repaired_raw,
+            elapsed_seconds=0.3,
+            generated_tokens=30,
+            peak_gpu_memory_mb=120.0,
+            repair_attempted=True,
+            repair_succeeded=True,
+            initial_raw_text='{"decision":"allow","severity":"none","category":"network_change"}',
+            initial_error="non-benign requires review/block",
+            repair_raw_text=repaired_raw,
+        )
+
+        failed_initial = '{"decision":"allow","severity":"none","category":"benign","extra":true}'
+        failed_repair = '{"decision":"allow","severity":"none","category":"benign","extra":false}'
+        repaired_failure = BaselinePredictionOutcome(
+            status=PredictionStatus.PARSE_ERROR,
+            fallback_decision=Decision.REVIEW,
+            error="extra semantic field",
+            raw_text=failed_repair,
+            elapsed_seconds=0.5,
+            generated_tokens=50,
+            peak_gpu_memory_mb=130.0,
+            repair_attempted=True,
+            repair_succeeded=False,
+            initial_raw_text=failed_initial,
+            initial_error="extra semantic field",
+            repair_raw_text=failed_repair,
+            repair_error="extra semantic field",
+        )
+
+        report = evaluate_baseline(
+            self.records()[:3],
+            SequencePredictor([first_pass, repaired, repaired_failure]),
+            freeze_version="freeze",
+            max_new_tokens=256,
+        )
+
+        self.assertEqual(report["report_version"], "baseline-eval-report-v2.1")
+        self.assertAlmostEqual(
+            report["compliance"]["first_pass_valid_output_rate"], 1 / 3
+        )
+        self.assertAlmostEqual(report["compliance"]["valid_output_rate"], 2 / 3)
+        self.assertEqual(report["repair_metrics"]["repair_attempt_count"], 2)
+        self.assertAlmostEqual(report["repair_metrics"]["repair_attempt_rate"], 2 / 3)
+        self.assertEqual(report["repair_metrics"]["repair_success_count"], 1)
+        self.assertAlmostEqual(report["repair_metrics"]["repair_success_rate"], 1 / 2)
+
+        repaired_row = report["samples"][1]
+        self.assertTrue(repaired_row["repair_attempted"])
+        self.assertTrue(repaired_row["repair_succeeded"])
+        self.assertEqual(repaired_row["initial_raw_text"], repaired.initial_raw_text)
+        self.assertEqual(repaired_row["initial_error"], repaired.initial_error)
+        self.assertEqual(repaired_row["repair_raw_text"], repaired_raw)
+        self.assertIsNone(repaired_row["repair_error"])
+
+        failed_row = report["samples"][2]
+        self.assertTrue(failed_row["repair_attempted"])
+        self.assertFalse(failed_row["repair_succeeded"])
+        self.assertEqual(failed_row["repair_error"], "extra semantic field")
+
+        performance = report["performance"]
+        self.assertEqual(performance["total_generated_tokens"], 90)
+        self.assertAlmostEqual(performance["mean_latency_seconds"], 0.3)
 
     def test_summary_compliance_requires_chinese_and_length_bound(self):
         english_payload = semantic_payload(valid_result(), summary="read repository status")

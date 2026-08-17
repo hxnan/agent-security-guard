@@ -62,7 +62,7 @@ python scripts/validate_eval_freeze.py
 
 ## 5. 当前阶段：P2 Baseline 评估
 
-### P2.1 Predictor / Prompt V1 — 工程实现完成，真实运行暴露输出契约问题
+### P2.1 Baseline V1 — 工程链路完成，真实运行用于发现契约问题
 
 - [x] 实现本地 Qwen predictor、lazy Transformers backend、greedy generation、单请求 CLI。
 - [x] backend/runtime/parse failure 使用 `fallback_decision=review`，不伪造风险类别。
@@ -83,62 +83,62 @@ report_version = baseline-eval-report-v1
 
 V1 报告保留于本地 `artifacts/baseline-eval-v1/report.json`，作为格式失败诊断证据。
 
-### P2.2 Baseline V2 semantic envelope — CPU/CI 实现阶段
+### P2.2 Baseline V2 semantic envelope — 已完成 CPU/CI，真实 probe 暴露单次契约脆弱性
 
-已批准架构：模型只输出六个真正需要推断的语义字段；系统负责最终 GuardResult envelope。
-
-模型字段：
-
-```text
-decision
-severity
-category
-summary
-confidence
-evidence
-```
-
-系统字段：
-
-```text
-schema_version = 1.0
-risk = (category != benign)
-rule_hits = []
-model_version = qwen2.5-1.5b-instruct-baseline-v1
-policy_version = model-only-baseline-v2
-```
-
-- [x] `guard/baseline_output.py` 六字段 Pydantic schema、numeric confidence-string 归一化和系统 envelope。
-- [x] 明确拒绝 boolean confidence；不把 `true/false` 当作 1/0。
+- [x] 模型只输出 `decision / severity / category / summary / confidence / evidence` 六个语义字段。
+- [x] 系统确定性注入 `schema_version / risk / rule_hits / model_version / policy_version`。
+- [x] `risk = (category != benign)`；不让模型重复推断该冗余字段。
+- [x] numeric confidence string 仅做无语义类型转换；boolean confidence 被拒绝。
 - [x] semantic consistency：benign=`allow+none`；非 benign 不可 `allow/none`；block 仅 high/critical。
-- [x] category/decision/severity 矛盾直接 `parse_error + review`，不自动修复。
-- [x] Predictor 切换到 semantic parser；共享 full-GuardResult parser 保持严格且不改动。
-- [x] `baseline-prompt-v2` 只请求六字段，并明确 confidence 是 JSON number。
-- [x] `baseline-eval-report-v2` 分阶段报告 JSON / semantic schema / semantic consistency / GuardResult envelope compliance。
-- [x] Evaluation Engine 继续输出 Risk、Category、Decision、Safety、latency、tokens/s、VRAM 和逐样本明细。
+- [x] category/decision/severity 矛盾直接拒绝；不自动修标签，不丢弃 extra fields。
+- [x] 共享 full-GuardResult parser 和公共 JSON Schema 保持不变。
+- [x] `baseline-eval-report-v2` 增加 JSON / semantic schema / semantic consistency / GuardResult envelope 分阶段 compliance。
 - [x] `scripts/evaluate.py` 默认报告切换到 `artifacts/baseline-eval-v2/report.json`。
-- [ ] 最终 PR CI / merge gate 完成后，在目标 GPU 进行两条 probe。
-- [ ] 两条 probe 均 `status=ok` 后，再运行 100 条 V2 formal baseline。
+- [x] 目标 GPU 两条 V2 probe 都成功完成模型生成、峰值显存约 2990 MB，但终态均为 parse_error。
+- [x] benign probe：`allow + none + network_change`，六字段完整但标签组合矛盾。
+- [x] risky probe：核心六字段为 `block/high/remote_execution`，但额外生成 `recommendations`、`additional_info`。
+- [x] 判定 V2 剩余根因是 1.5B 模型**一次生成严格契约遵循不稳定**，不是 semantic envelope 架构或 CUDA/backend 故障。
 
-V2 固定版本：
+### P2.3 Baseline V2.1 bounded contract repair — CPU/CI 实现
+
+已批准策略：只有首轮 semantic parse/consistency 失败时，允许同一模型进行**最多一次**受控 contract repair；程序自身绝不替模型修改安全语义。
+
+固定版本：
 
 ```text
-prompt_version = baseline-prompt-v2
-model_version  = qwen2.5-1.5b-instruct-baseline-v1
-policy_version = model-only-baseline-v2
-report_version = baseline-eval-report-v2
+prompt_version        = baseline-prompt-v2
+repair_prompt_version = baseline-repair-prompt-v1
+model_version         = qwen2.5-1.5b-instruct-baseline-v1
+policy_version        = model-only-baseline-v2.1
+report_version        = baseline-eval-report-v2.1
 ```
 
-### P2.3 目标 GPU Baseline V2 — 下一本地门禁
+- [x] Repair prompt 将原始 GuardRequest、首轮 raw output、精确 validation error 作为 canonical JSON 不可信数据。
+- [x] Repair prompt 明确只允许相同六字段，禁止 Markdown、system-owned fields 和任意 extra fields。
+- [x] 首轮成功时只调用 backend 一次，不 repair。
+- [x] 首轮 backend error 不 retry。
+- [x] 首轮 parse error 时恰好允许一次同模型 repair generation。
+- [x] Repair 输出通过与首轮完全相同的 strict semantic parser；不存在 permissive repair parser。
+- [x] Repair parse/backend 失败后终止，没有第三次 generation，继续 `fallback_decision=review`。
+- [x] 不自动把 `network_change` 改成 `benign`，不自动把 `allow` 改成 `review`，不静默删除 `recommendations/additional_info`。
+- [x] Outcome 保留 `repair_attempted / repair_succeeded`、两轮 raw/error provenance。
+- [x] Repaired sample 的 elapsed/tokens 为两轮总和，peak VRAM 取两轮最大值。
+- [x] Evaluation V2.1 区分 `first_pass_valid_output_rate` 与最终 `valid_output_rate`。
+- [x] Evaluation 记录 repair attempt/success count/rate，逐样本保留 repair provenance。
+- [x] Evaluation report 顶层记录 initial prompt 与 repair prompt 的独立版本 provenance。
+- [x] 正式 CLI stdout 同时输出首轮成功率、repair 尝试率/成功率与最终成功率。
+- [ ] PR 最新 HEAD 完整 CI、scope review、merge 和 post-merge main CI。
 
-先检查环境和 freeze：
+### P2.4 目标 GPU Baseline V2.1 — 下一本地门禁
+
+合并后，先检查环境和 freeze：
 
 ```bash
 python scripts/validate_eval_freeze.py
 python scripts/check_environment.py
 ```
 
-然后仅跑两条 probe：
+然后重新运行同样两条 probe：
 
 ```bash
 cat >/tmp/baseline-v2-benign.json <<'JSON'
@@ -153,7 +153,15 @@ python scripts/predict_baseline.py --request /tmp/baseline-v2-benign.json
 python scripts/predict_baseline.py --request /tmp/baseline-v2-risky.json
 ```
 
-只有两条均返回 `status=ok`，才运行完整评估：
+进入正式 100 条的门槛：
+
+1. benign probe 终态 `status=ok`；
+2. risky probe 终态 `status=ok`；
+3. 任一 probe 最多只有一次 repair；
+4. 最终 `result` 是 strict system-enveloped GuardResult；
+5. 输出保留 repair provenance，可看出是 first-pass 还是 repaired success。
+
+满足后再运行：
 
 ```bash
 python scripts/evaluate.py \
@@ -164,17 +172,18 @@ python scripts/evaluate.py \
 
 ### P2 验收条件
 
-- 同一模型、Prompt V2、Eval freeze 可重复生成兼容报告。
-- V2 输出 coverage 足够高，使质量指标不再被格式失败掩盖。
-- 任何单条坏输出不会终止完整评估；失败被显式计入 coverage/compliance。
-- 预测输出不会因为待检测命令中的 prompt injection 改写系统契约。
-- 系统只注入固定 provenance/冗余派生字段，不替模型修正安全语义标签。
-- 报告可定位每一个错误样本和最终 Gold 标签。
+- 同一模型、Prompt/Repair Prompt、Eval freeze 可重复生成兼容报告。
+- 最终输出 coverage 足够高，使质量指标不再被格式失败掩盖，同时首轮成功率单独可见。
+- Repair 不隐藏真实成本：延迟/token 统计包含第二次生成。
+- 任何单条坏输出不会终止完整评估；最终失败被显式计入 coverage/compliance。
+- 预测与 repair 不会因为待检测命令、previous output 或 validation error 中的 prompt injection 改写系统契约。
+- 系统只注入固定 provenance/冗余派生字段，不替模型修正安全语义标签或删除多余模型字段。
+- 报告可定位每一个错误样本、两轮生成 provenance 和最终 Gold 标签。
 - 性能和显存数据来自目标 6GB GPU 实测，而非估算。
 
 ## 6. P2 之后
 
-1. 根据 Baseline V2 真实错误分布实现 Rule Engine + Policy Fusion，并用同一 Eval V1 technical freeze 对比 Model-only / Rules-only / Fusion。
+1. 根据 Baseline V2.1 真实错误分布实现 Rule Engine + Policy Fusion，并用同一 Eval V1 technical freeze 对比 Model-only / Rules-only / Fusion。
 2. 根据 Baseline/规则错误分析生产 5k–10k 正式训练数据，按 semantic template / attack family 分组，防止训练评估泄漏。
 3. 在 6GB GPU 上进行正式 QLoRA/SFT，与 Baseline 和 Fusion 指标比较。
 4. 进入本地 API/SDK、审计、压测和红队持续回归。

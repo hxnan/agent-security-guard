@@ -64,6 +64,35 @@ def _environment_metadata(backend: TransformersQwenBackend, model_path: Path) ->
     return metadata
 
 
+def _compact_summary(report: dict[str, object], output: Path) -> dict[str, object]:
+    """Build the stable one-line evaluation summary printed by the CLI."""
+    compliance = report["compliance"]
+    repair_metrics = report["repair_metrics"]
+    performance = report["performance"]
+    return {
+        "status": "ok",
+        "output": str(output),
+        "total_samples": report["total_samples"],
+        "first_pass_valid_output_rate": compliance["first_pass_valid_output_rate"],
+        "repair_attempt_rate": repair_metrics["repair_attempt_rate"],
+        "repair_success_rate": repair_metrics["repair_success_rate"],
+        "valid_output_rate": compliance["valid_output_rate"],
+        "risk_f1": report["risk_metrics"]["f1"],
+        "category_macro_f1": report["category_metrics"]["macro_f1"],
+        "effective_decision_accuracy": report["decision_metrics"][
+            "effective_decision_accuracy_all"
+        ],
+        "high_or_critical_allow_miss_rate": report["safety_metrics"][
+            "high_or_critical_allow_miss_rate"
+        ],
+        "p50_latency_seconds": performance["p50_latency_seconds"],
+        "p95_latency_seconds": performance["p95_latency_seconds"],
+        "tokens_per_second": performance["tokens_per_second"],
+        "peak_gpu_memory_mb": performance["peak_gpu_memory_mb"],
+        "evaluation_wall_seconds": performance["evaluation_wall_seconds"],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.max_new_tokens < 1:
@@ -106,27 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as exc:
         return _error("report_write", f"could not write evaluation report: {exc}", 1)
 
-    performance = report["performance"]
-    summary = {
-        "status": "ok",
-        "output": str(args.output),
-        "total_samples": report["total_samples"],
-        "valid_output_rate": report["compliance"]["valid_output_rate"],
-        "risk_f1": report["risk_metrics"]["f1"],
-        "category_macro_f1": report["category_metrics"]["macro_f1"],
-        "effective_decision_accuracy": report["decision_metrics"][
-            "effective_decision_accuracy_all"
-        ],
-        "high_or_critical_allow_miss_rate": report["safety_metrics"][
-            "high_or_critical_allow_miss_rate"
-        ],
-        "p50_latency_seconds": performance["p50_latency_seconds"],
-        "p95_latency_seconds": performance["p95_latency_seconds"],
-        "tokens_per_second": performance["tokens_per_second"],
-        "peak_gpu_memory_mb": performance["peak_gpu_memory_mb"],
-        "evaluation_wall_seconds": performance["evaluation_wall_seconds"],
-    }
-    _emit(summary)
+    _emit(_compact_summary(report, args.output))
     return 0
 
 
