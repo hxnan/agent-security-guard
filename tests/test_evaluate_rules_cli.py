@@ -43,6 +43,7 @@ class EvaluateRulesCliTests(unittest.TestCase):
             "abstain_rate": 0.69,
             "benign_rule_rate": 0.08,
             "dangerous_rule_rate": 0.23,
+            "rule_error_count": 0,
             "decision_accuracy_decisive": 0.97,
             "category_accuracy_decisive": 0.94,
             "false_benign_allow_count": 0,
@@ -58,6 +59,7 @@ class EvaluateRulesCliTests(unittest.TestCase):
                 "abstain_rate",
                 "benign_rule_rate",
                 "dangerous_rule_rate",
+                "rule_error_count",
                 "decision_accuracy_decisive",
                 "category_accuracy_decisive",
                 "false_benign_allow_count",
@@ -66,6 +68,7 @@ class EvaluateRulesCliTests(unittest.TestCase):
             },
         )
         self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["rule_error_count"], 0)
         self.assertEqual(summary["output"], "out.json")
 
     def test_committed_freeze_runs_cpu_only_and_writes_100_sample_report(self):
@@ -76,6 +79,7 @@ class EvaluateRulesCliTests(unittest.TestCase):
             payload = json.loads(result.stdout)
             self.assertEqual(payload["status"], "ok")
             self.assertEqual(payload["total_samples"], 100)
+            self.assertIn("rule_error_count", payload)
             self.assertTrue(output.exists())
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(report["total_samples"], 100)
