@@ -138,6 +138,20 @@ def fallback_outcome():
     )
 
 
+def rule_error_outcome():
+    return FusionOutcome(
+        status=PredictionStatus.PARSE_ERROR,
+        result=None,
+        fallback_decision=Decision.REVIEW,
+        source=FusionSource.FALLBACK,
+        rule_matches=(),
+        selected_rule_id=None,
+        model_invoked=False,
+        model_outcome=None,
+        rule_errors=("ExplodingMatcher: matcher boom",),
+    )
+
+
 class SequenceFusionPredictor:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
@@ -213,6 +227,8 @@ class FusionEvaluationTests(unittest.TestCase):
         self.assertEqual(report["model_invocation_rate"], 0.5)
         self.assertEqual(report["valid_output_count"], 3)
         self.assertEqual(report["valid_output_rate"], 0.75)
+        self.assertEqual(report["rule_error_count"], 0)
+        self.assertEqual(report["rule_error_rate"], 0.0)
         self.assertEqual(
             report["per_rule_contribution"],
             {
@@ -229,6 +245,21 @@ class FusionEvaluationTests(unittest.TestCase):
         self.assertEqual(report["performance"]["measurement_mode"], "not_measured")
         self.assertIsNone(report["performance"]["p50_latency_seconds"])
         self.assertIsNone(report["performance"]["tokens_per_second"])
+        self.assertEqual(report["samples"][0]["rule_errors"], [])
+
+    def test_rule_errors_are_reported_separately_from_model_fallback(self):
+        report = evaluate_fusion(
+            [gold("EV001")],
+            SequenceFusionPredictor([rule_error_outcome()]),
+            freeze_version="test",
+            measure_performance=False,
+        )
+        self.assertEqual(report["source_counts"], {"fallback": 1})
+        self.assertEqual(report["rule_error_count"], 1)
+        self.assertEqual(report["rule_error_rate"], 1.0)
+        self.assertEqual(report["model_invocation_count"], 0)
+        self.assertEqual(len(report["samples"][0]["rule_errors"]), 1)
+        self.assertIn("matcher boom", report["samples"][0]["rule_errors"][0])
 
     def test_benign_false_positive_records_source(self):
         records = [gold("EV001")]
