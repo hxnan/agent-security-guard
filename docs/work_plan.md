@@ -125,6 +125,7 @@ report_version        = baseline-eval-report-v2.1
 - [x] Repaired sample 的 elapsed/tokens 为两轮总和，peak VRAM 取两轮最大值。
 - [x] Evaluation V2.1 区分 `first_pass_valid_output_rate` 与最终 `valid_output_rate`。
 - [x] Evaluation 记录 repair attempt/success count/rate，逐样本保留 repair provenance。
+- [x] Evaluation report 顶层记录 initial prompt 与 repair prompt 的独立版本 provenance。
 - [x] 正式 CLI stdout 同时输出首轮成功率、repair 尝试率/成功率与最终成功率。
 - [ ] PR 最新 HEAD 完整 CI、scope review、merge 和 post-merge main CI。
 
