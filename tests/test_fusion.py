@@ -3,7 +3,7 @@ import unittest
 from guard.baseline_predictor import BaselinePredictionOutcome, PredictionStatus
 from guard.contracts import GuardRequest, GuardResult
 from guard.fusion import FUSION_POLICY_VERSION, FusionPredictor, FusionSource
-from guard.rules import RuleEngine
+from guard.rules import RuleEngine, RuleMatch
 from guard.taxonomy import Decision, RiskCategory, Severity
 
 
@@ -15,6 +15,37 @@ class CountingModelPredictor:
     def predict(self, request):
         self.calls.append(request)
         return self.outcome
+
+
+class StaticMatcher:
+    def __init__(self, rule_match):
+        self.rule_match = rule_match
+
+    def __call__(self, request):
+        return self.rule_match
+
+
+class ExplodingMatcher:
+    def __call__(self, request):
+        raise RuntimeError("matcher boom")
+
+
+def static_rule(
+    rule_id,
+    *,
+    category,
+    decision,
+    severity,
+):
+    return RuleMatch(
+        rule_id=rule_id,
+        category=category,
+        decision=decision,
+        severity=severity,
+        summary="测试规则结果",
+        evidence=("fixture",),
+        priority=1,
+    )
 
 
 def model_result(**overrides):
@@ -91,6 +122,52 @@ class FusionPredictorTests(unittest.TestCase):
         self.assertEqual(outcome.result.decision, Decision.ALLOW)
         self.assertEqual(outcome.result.severity, Severity.NONE)
 
+    def test_rule_error_suppresses_benign_and_fails_safe_without_model(self):
+        benign = static_rule(
+            "rule.benign.fixture.v1",
+            category=RiskCategory.BENIGN,
+            decision=Decision.ALLOW,
+            severity=Severity.NONE,
+        )
+        model = CountingModelPredictor(ok_model_outcome())
+        predictor = FusionPredictor(
+            RuleEngine(matchers=(ExplodingMatcher(), StaticMatcher(benign))),
+            model,
+        )
+
+        outcome = predictor.predict(GuardRequest(type="shell", command="fixture"))
+
+        self.assertEqual(model.calls, [])
+        self.assertEqual(outcome.source, FusionSource.FALLBACK)
+        self.assertFalse(outcome.model_invoked)
+        self.assertIsNone(outcome.model_outcome)
+        self.assertIsNone(outcome.result)
+        self.assertEqual(outcome.fallback_decision, Decision.REVIEW)
+        self.assertEqual(outcome.status, PredictionStatus.PARSE_ERROR)
+        self.assertEqual(len(outcome.rule_errors), 1)
+        self.assertIn("matcher boom", outcome.rule_errors[0])
+
+    def test_rule_error_still_allows_existing_dangerous_rule_to_decide(self):
+        dangerous = static_rule(
+            "rule.danger.fixture.v1",
+            category=RiskCategory.CREDENTIAL_ACCESS,
+            decision=Decision.REVIEW,
+            severity=Severity.HIGH,
+        )
+        model = CountingModelPredictor(ok_model_outcome())
+        predictor = FusionPredictor(
+            RuleEngine(matchers=(ExplodingMatcher(), StaticMatcher(dangerous))),
+            model,
+        )
+
+        outcome = predictor.predict(GuardRequest(type="shell", command="fixture"))
+
+        self.assertEqual(model.calls, [])
+        self.assertEqual(outcome.source, FusionSource.RULE)
+        self.assertEqual(outcome.result.category, RiskCategory.CREDENTIAL_ACCESS)
+        self.assertEqual(outcome.result.decision, Decision.REVIEW)
+        self.assertEqual(len(outcome.rule_errors), 1)
+
     def test_no_rule_path_invokes_model_once_and_preserves_semantics(self):
         original = ok_model_outcome(
             decision="review",
@@ -114,6 +191,7 @@ class FusionPredictorTests(unittest.TestCase):
         self.assertIsNone(outcome.fallback_decision)
         self.assertEqual(outcome.rule_matches, ())
         self.assertIsNone(outcome.selected_rule_id)
+        self.assertEqual(outcome.rule_errors, ())
 
         before = original.result.model_dump(mode="json")
         after = outcome.result.model_dump(mode="json")
