@@ -38,11 +38,14 @@ def evaluate_rules(
     dangerous_rule_count = 0
     decision_correct_count = 0
     category_correct_count = 0
+    rule_error_count = 0
     false_benign_allow_ids: list[str] = []
     high_or_critical_allow_miss_ids: list[str] = []
 
     for gold in records:
         evaluation = engine.evaluate(gold.request)
+        if evaluation.errors:
+            rule_error_count += 1
         for rule_match in evaluation.matches:
             per_rule_hits[rule_match.rule_id] += 1
 
@@ -99,6 +102,7 @@ def evaluate_rules(
                     rule_match.rule_id for rule_match in evaluation.matches
                 ],
                 "selected_rule_id": selected.rule_id if selected is not None else None,
+                "rule_errors": list(evaluation.errors),
                 "predicted": predicted,
                 "effective_decision": effective_decision.value,
                 "decision_correct": decision_correct,
@@ -122,6 +126,8 @@ def evaluate_rules(
         "benign_rule_rate": _rate(benign_rule_count, total),
         "dangerous_rule_count": dangerous_rule_count,
         "dangerous_rule_rate": _rate(dangerous_rule_count, total),
+        "rule_error_count": rule_error_count,
+        "rule_error_rate": _rate(rule_error_count, total),
         "decision_accuracy_decisive": _rate(
             decision_correct_count, decisive_count
         ),
