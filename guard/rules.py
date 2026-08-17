@@ -26,6 +26,7 @@ class RuleMatch:
 class RuleEvaluation:
     matches: tuple[RuleMatch, ...]
     selected: RuleMatch | None
+    errors: tuple[str, ...] = ()
 
 
 RuleMatcher = Callable[[GuardRequest], RuleMatch | None]
@@ -65,6 +66,10 @@ def select_decisive_match(matches: Iterable[RuleMatch]) -> RuleMatch | None:
     return min(collected, key=_selection_key)
 
 
+def _matcher_name(matcher: RuleMatcher) -> str:
+    return getattr(matcher, "__name__", matcher.__class__.__name__)
+
+
 class RuleEngine:
     """Evaluate a validated GuardRequest against deterministic pure matchers."""
 
@@ -76,14 +81,33 @@ class RuleEngine:
         self._matchers = tuple(matchers)
 
     def evaluate(self, request: GuardRequest) -> RuleEvaluation:
-        matches = tuple(
-            rule_match
-            for matcher in self._matchers
-            if (rule_match := matcher(request)) is not None
-        )
+        matches: list[RuleMatch] = []
+        errors: list[str] = []
+        for matcher in self._matchers:
+            try:
+                rule_match = matcher(request)
+            except Exception as exc:
+                errors.append(f"{_matcher_name(matcher)}: {exc}")
+                continue
+            if rule_match is not None:
+                matches.append(rule_match)
+
+        collected = tuple(matches)
+        if errors:
+            # A partially failed registry must never authorize a benign allow.
+            # Existing dangerous evidence may still fail closed via review/block.
+            decisive_candidates = tuple(
+                rule_match
+                for rule_match in collected
+                if rule_match.category is not RiskCategory.BENIGN
+            )
+        else:
+            decisive_candidates = collected
+
         return RuleEvaluation(
-            matches=matches,
-            selected=select_decisive_match(matches),
+            matches=collected,
+            selected=select_decisive_match(decisive_candidates),
+            errors=tuple(errors),
         )
 
 
