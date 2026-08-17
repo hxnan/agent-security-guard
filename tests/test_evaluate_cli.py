@@ -35,6 +35,40 @@ class EvaluateCliTests(unittest.TestCase):
             REPOSITORY_ROOT / "artifacts" / "baseline-eval-v2" / "report.json",
         )
 
+    def test_compact_summary_exposes_first_pass_repair_and_final_rates(self):
+        module = load_evaluate_module()
+        report = {
+            "total_samples": 100,
+            "compliance": {
+                "first_pass_valid_output_rate": 0.4,
+                "valid_output_rate": 0.9,
+            },
+            "repair_metrics": {
+                "repair_attempt_rate": 0.6,
+                "repair_success_rate": 5 / 6,
+            },
+            "risk_metrics": {"f1": 0.8},
+            "category_metrics": {"macro_f1": 0.7},
+            "decision_metrics": {"effective_decision_accuracy_all": 0.75},
+            "safety_metrics": {"high_or_critical_allow_miss_rate": 0.01},
+            "performance": {
+                "p50_latency_seconds": 2.0,
+                "p95_latency_seconds": 4.0,
+                "tokens_per_second": 30.0,
+                "peak_gpu_memory_mb": 3000.0,
+                "evaluation_wall_seconds": 400.0,
+            },
+        }
+        summary = module._compact_summary(report, Path("out.json"))
+        self.assertEqual(summary["first_pass_valid_output_rate"], 0.4)
+        self.assertEqual(summary["repair_attempt_rate"], 0.6)
+        self.assertEqual(summary["repair_success_rate"], 5 / 6)
+        self.assertEqual(summary["valid_output_rate"], 0.9)
+        self.assertEqual(summary["output"], "out.json")
+        self.assertEqual(summary["total_samples"], 100)
+        self.assertEqual(summary["risk_f1"], 0.8)
+        self.assertEqual(summary["category_macro_f1"], 0.7)
+
     def test_nonpositive_max_new_tokens_exits_two_before_model_loading(self):
         result = self.run_cli("--max-new-tokens", "0")
         self.assertEqual(result.returncode, 2)
