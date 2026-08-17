@@ -9,7 +9,7 @@ from .taxonomy import Decision, RiskCategory, Severity
 BASELINE_PROMPT_VERSION = "baseline-prompt-v2"
 BASELINE_REPAIR_PROMPT_VERSION = "baseline-repair-prompt-v1"
 BASELINE_MODEL_VERSION = "qwen2.5-1.5b-instruct-baseline-v1"
-BASELINE_POLICY_VERSION = "model-only-baseline-v2"
+BASELINE_POLICY_VERSION = "model-only-baseline-v2.1"
 
 MODEL_FACING_FIELDS = (
     "decision",
