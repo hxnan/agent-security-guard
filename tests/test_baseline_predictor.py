@@ -222,7 +222,7 @@ class BaselinePredictorTests(unittest.TestCase):
         self.assertEqual(outcome.fallback_decision, Decision.REVIEW)
         self.assertIn("JSON object", outcome.initial_error)
         self.assertIn("JSON object", outcome.repair_error)
-        self.assertEqual(outcome.elapsed_seconds, 0.6)
+        self.assertAlmostEqual(outcome.elapsed_seconds, 0.6)
         self.assertEqual(outcome.generated_tokens, 12)
         self.assertIsNone(outcome.peak_gpu_memory_mb)
         self.assertEqual(len(backend.calls), 2)
