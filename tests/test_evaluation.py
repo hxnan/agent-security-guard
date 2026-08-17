@@ -6,6 +6,7 @@ from guard.baseline_prompt import (
     BASELINE_MODEL_VERSION,
     BASELINE_POLICY_VERSION,
     BASELINE_PROMPT_VERSION,
+    BASELINE_REPAIR_PROMPT_VERSION,
 )
 from guard.contracts import GuardResult
 from guard.evaluation import BASELINE_EVAL_REPORT_VERSION, evaluate_baseline
@@ -166,6 +167,9 @@ class BaselineEvaluationLoopTests(unittest.TestCase):
         self.assertEqual(BASELINE_EVAL_REPORT_VERSION, "baseline-eval-report-v2.1")
         self.assertEqual(report["report_version"], BASELINE_EVAL_REPORT_VERSION)
         self.assertEqual(report["prompt_version"], BASELINE_PROMPT_VERSION)
+        self.assertEqual(
+            report["repair_prompt_version"], BASELINE_REPAIR_PROMPT_VERSION
+        )
         self.assertEqual(report["model_version"], BASELINE_MODEL_VERSION)
         self.assertEqual(report["policy_version"], BASELINE_POLICY_VERSION)
         self.assertEqual(report["freeze_version"], "eval-v1-agent-reviewed-rc1")
