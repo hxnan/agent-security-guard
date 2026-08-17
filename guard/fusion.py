@@ -33,6 +33,7 @@ class FusionOutcome:
     selected_rule_id: str | None
     model_invoked: bool
     model_outcome: BaselinePredictionOutcome | None
+    rule_errors: tuple[str, ...] = ()
 
 
 class FusionPredictor:
@@ -62,6 +63,20 @@ class FusionPredictor:
                 selected_rule_id=evaluation.selected.rule_id,
                 model_invoked=False,
                 model_outcome=None,
+                rule_errors=evaluation.errors,
+            )
+
+        if evaluation.errors:
+            return FusionOutcome(
+                status=PredictionStatus.PARSE_ERROR,
+                result=None,
+                fallback_decision=Decision.REVIEW,
+                source=FusionSource.FALLBACK,
+                rule_matches=evaluation.matches,
+                selected_rule_id=None,
+                model_invoked=False,
+                model_outcome=None,
+                rule_errors=evaluation.errors,
             )
 
         model_outcome = self.model_predictor.predict(request)
@@ -75,6 +90,7 @@ class FusionPredictor:
                 selected_rule_id=None,
                 model_invoked=True,
                 model_outcome=model_outcome,
+                rule_errors=evaluation.errors,
             )
 
         result = model_outcome.result.model_copy(
@@ -89,4 +105,5 @@ class FusionPredictor:
             selected_rule_id=None,
             model_invoked=True,
             model_outcome=model_outcome,
+            rule_errors=evaluation.errors,
         )
