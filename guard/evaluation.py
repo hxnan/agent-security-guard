@@ -22,7 +22,7 @@ from .result_parsing import GeneratedResultError, extract_first_json_object
 from .taxonomy import Decision, RiskCategory, Severity
 
 
-BASELINE_EVAL_REPORT_VERSION = "baseline-eval-report-v2"
+BASELINE_EVAL_REPORT_VERSION = "baseline-eval-report-v2.1"
 
 
 class PredictorProtocol(Protocol):
@@ -120,6 +120,12 @@ def _sample_record(
         "effective_decision": effective_decision.value,
         "error": outcome.error,
         "raw_text": outcome.raw_text,
+        "repair_attempted": outcome.repair_attempted,
+        "repair_succeeded": outcome.repair_succeeded,
+        "initial_raw_text": outcome.initial_raw_text,
+        "initial_error": outcome.initial_error,
+        "repair_raw_text": outcome.repair_raw_text,
+        "repair_error": outcome.repair_error,
         "elapsed_seconds": outcome.elapsed_seconds,
         "generated_tokens": outcome.generated_tokens,
         "peak_gpu_memory_mb": outcome.peak_gpu_memory_mb,
@@ -355,12 +361,25 @@ def evaluate_baseline(
     samples: list[dict[str, object]] = []
     compliance_counts = Counter()
     statuses = Counter()
+    first_pass_valid_count = 0
+    repair_attempt_count = 0
+    repair_success_count = 0
 
     for gold in records:
         outcome = predictor.predict(gold.request)
         row, compliance = _sample_record(gold, outcome)
         samples.append(row)
         statuses[outcome.status.value] += 1
+        if (
+            outcome.status is PredictionStatus.OK
+            and outcome.result is not None
+            and not outcome.repair_attempted
+        ):
+            first_pass_valid_count += 1
+        if outcome.repair_attempted:
+            repair_attempt_count += 1
+        if outcome.repair_attempted and outcome.repair_succeeded:
+            repair_success_count += 1
         for key, value in compliance.items():
             if value:
                 compliance_counts[key] += 1
@@ -393,7 +412,14 @@ def evaluate_baseline(
                 compliance_counts["summary_compliant"], total
             ),
             "strict_output_rate": _rate(strict_count, total),
+            "first_pass_valid_output_rate": _rate(first_pass_valid_count, total),
             "valid_output_rate": _rate(strict_count, total),
+        },
+        "repair_metrics": {
+            "repair_attempt_count": repair_attempt_count,
+            "repair_attempt_rate": _rate(repair_attempt_count, total),
+            "repair_success_count": repair_success_count,
+            "repair_success_rate": _rate(repair_success_count, repair_attempt_count),
         },
         "risk_metrics": _build_risk_metrics(samples),
         "category_metrics": _build_category_metrics(samples),
