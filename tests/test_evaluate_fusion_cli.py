@@ -42,6 +42,7 @@ class EvaluateFusionCliTests(unittest.TestCase):
             "valid_output_rate": 0.8,
             "rule_short_circuit_rate": 0.3,
             "model_invocation_rate": 0.7,
+            "rule_error_count": 0,
             "source_counts": {"rule": 30, "model": 50, "fallback": 20},
             "model_repair_metrics": {"attempt_rate": 0.6, "success_rate": 0.5},
             "risk_metrics": {"f1": 0.85},
@@ -61,6 +62,7 @@ class EvaluateFusionCliTests(unittest.TestCase):
         self.assertEqual(summary["status"], "ok")
         self.assertEqual(summary["rule_short_circuit_rate"], 0.3)
         self.assertEqual(summary["model_invocation_rate"], 0.7)
+        self.assertEqual(summary["rule_error_count"], 0)
         self.assertEqual(summary["valid_output_rate"], 0.8)
         self.assertEqual(summary["risk_f1"], 0.85)
         self.assertEqual(summary["category_macro_f1"], 0.4)
