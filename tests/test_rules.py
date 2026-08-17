@@ -22,6 +22,11 @@ class StaticMatcher:
         return self.match
 
 
+class ExplodingMatcher:
+    def __call__(self, request):
+        raise RuntimeError("matcher boom")
+
+
 def match(
     rule_id,
     *,
@@ -61,6 +66,7 @@ class RuleEngineCoreTests(unittest.TestCase):
         evaluation = RuleEngine(matchers=()).evaluate(request)
         self.assertEqual(evaluation.matches, ())
         self.assertIsNone(evaluation.selected)
+        self.assertEqual(evaluation.errors, ())
 
     def test_all_matches_are_retained_in_matcher_order(self):
         request = GuardRequest(type="shell", command="fixture")
@@ -70,6 +76,36 @@ class RuleEngineCoreTests(unittest.TestCase):
             matchers=(StaticMatcher(first), StaticMatcher(second))
         ).evaluate(request)
         self.assertEqual(evaluation.matches, (first, second))
+
+    def test_matcher_exception_is_recorded_and_suppresses_benign_selection(self):
+        request = GuardRequest(type="shell", command="git status --short")
+        benign = match(
+            "rule.benign.git_status.v1",
+            category=RiskCategory.BENIGN,
+            decision=Decision.ALLOW,
+            severity=Severity.NONE,
+        )
+        evaluation = RuleEngine(
+            matchers=(ExplodingMatcher(), StaticMatcher(benign))
+        ).evaluate(request)
+        self.assertEqual(evaluation.matches, (benign,))
+        self.assertIsNone(evaluation.selected)
+        self.assertEqual(len(evaluation.errors), 1)
+        self.assertIn("matcher boom", evaluation.errors[0])
+
+    def test_matcher_exception_does_not_discard_a_dangerous_match(self):
+        request = GuardRequest(type="shell", command="fixture")
+        dangerous = match(
+            "rule.danger.v1",
+            category=RiskCategory.CREDENTIAL_ACCESS,
+            decision=Decision.REVIEW,
+            severity=Severity.HIGH,
+        )
+        evaluation = RuleEngine(
+            matchers=(ExplodingMatcher(), StaticMatcher(dangerous))
+        ).evaluate(request)
+        self.assertEqual(evaluation.selected, dangerous)
+        self.assertEqual(len(evaluation.errors), 1)
 
     def test_dangerous_match_always_beats_benign_match(self):
         benign = match(
