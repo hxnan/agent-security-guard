@@ -80,6 +80,7 @@ def _compact_summary(report: dict[str, object], output: Path) -> dict[str, objec
         "total_samples": report["total_samples"],
         "rule_short_circuit_rate": report["rule_short_circuit_rate"],
         "model_invocation_rate": report["model_invocation_rate"],
+        "rule_error_count": report["rule_error_count"],
         "source_counts": report["source_counts"],
         "model_repair_attempt_rate": repair["attempt_rate"],
         "model_repair_success_rate": repair["success_rate"],
