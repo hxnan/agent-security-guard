@@ -7,7 +7,7 @@ from typing import Protocol, Sequence
 from pydantic import BaseModel
 
 from .baseline_output import parse_baseline_semantic_result
-from .baseline_prompt import format_baseline_messages
+from .baseline_prompt import format_baseline_messages, format_baseline_repair_messages
 from .contracts import GuardRequest, GuardResult
 from .result_parsing import GeneratedResultError
 from .taxonomy import Decision
@@ -50,6 +50,17 @@ class BaselinePredictionOutcome(BaseModel):
     elapsed_seconds: float | None = None
     generated_tokens: int | None = None
     peak_gpu_memory_mb: float | None = None
+    repair_attempted: bool = False
+    repair_succeeded: bool = False
+    initial_raw_text: str | None = None
+    initial_error: str | None = None
+    repair_raw_text: str | None = None
+    repair_error: str | None = None
+
+
+def _max_peak_memory(*values: float | None) -> float | None:
+    present = [value for value in values if value is not None]
+    return max(present) if present else None
 
 
 class BaselinePredictor:
@@ -64,7 +75,7 @@ class BaselinePredictor:
     def predict(self, request: GuardRequest) -> BaselinePredictionOutcome:
         messages = format_baseline_messages(request)
         try:
-            generation = self.backend.generate(messages, self.max_new_tokens)
+            initial = self.backend.generate(messages, self.max_new_tokens)
         except Exception as exc:
             return BaselinePredictionOutcome(
                 status=PredictionStatus.BACKEND_ERROR,
@@ -73,23 +84,79 @@ class BaselinePredictor:
             )
 
         try:
-            result = parse_baseline_semantic_result(generation.raw_text)
-        except GeneratedResultError as exc:
+            result = parse_baseline_semantic_result(initial.raw_text)
+        except GeneratedResultError as initial_exc:
+            initial_error = str(initial_exc)
+        else:
+            return BaselinePredictionOutcome(
+                status=PredictionStatus.OK,
+                result=result,
+                raw_text=initial.raw_text,
+                initial_raw_text=initial.raw_text,
+                elapsed_seconds=initial.elapsed_seconds,
+                generated_tokens=initial.generated_tokens,
+                peak_gpu_memory_mb=initial.peak_gpu_memory_mb,
+            )
+
+        repair_messages = format_baseline_repair_messages(
+            request,
+            initial.raw_text,
+            initial_error,
+        )
+        try:
+            repair = self.backend.generate(repair_messages, self.max_new_tokens)
+        except Exception as exc:
+            repair_error = f"backend repair generation failed: {exc}"
+            return BaselinePredictionOutcome(
+                status=PredictionStatus.BACKEND_ERROR,
+                fallback_decision=Decision.REVIEW,
+                error=repair_error,
+                raw_text=initial.raw_text,
+                elapsed_seconds=initial.elapsed_seconds,
+                generated_tokens=initial.generated_tokens,
+                peak_gpu_memory_mb=initial.peak_gpu_memory_mb,
+                repair_attempted=True,
+                initial_raw_text=initial.raw_text,
+                initial_error=initial_error,
+                repair_error=repair_error,
+            )
+
+        elapsed_seconds = initial.elapsed_seconds + repair.elapsed_seconds
+        generated_tokens = initial.generated_tokens + repair.generated_tokens
+        peak_gpu_memory_mb = _max_peak_memory(
+            initial.peak_gpu_memory_mb,
+            repair.peak_gpu_memory_mb,
+        )
+
+        try:
+            result = parse_baseline_semantic_result(repair.raw_text)
+        except GeneratedResultError as repair_exc:
+            repair_error = str(repair_exc)
             return BaselinePredictionOutcome(
                 status=PredictionStatus.PARSE_ERROR,
                 fallback_decision=Decision.REVIEW,
-                error=str(exc),
-                raw_text=generation.raw_text,
-                elapsed_seconds=generation.elapsed_seconds,
-                generated_tokens=generation.generated_tokens,
-                peak_gpu_memory_mb=generation.peak_gpu_memory_mb,
+                error=repair_error,
+                raw_text=repair.raw_text,
+                elapsed_seconds=elapsed_seconds,
+                generated_tokens=generated_tokens,
+                peak_gpu_memory_mb=peak_gpu_memory_mb,
+                repair_attempted=True,
+                initial_raw_text=initial.raw_text,
+                initial_error=initial_error,
+                repair_raw_text=repair.raw_text,
+                repair_error=repair_error,
             )
 
         return BaselinePredictionOutcome(
             status=PredictionStatus.OK,
             result=result,
-            raw_text=generation.raw_text,
-            elapsed_seconds=generation.elapsed_seconds,
-            generated_tokens=generation.generated_tokens,
-            peak_gpu_memory_mb=generation.peak_gpu_memory_mb,
+            raw_text=repair.raw_text,
+            elapsed_seconds=elapsed_seconds,
+            generated_tokens=generated_tokens,
+            peak_gpu_memory_mb=peak_gpu_memory_mb,
+            repair_attempted=True,
+            repair_succeeded=True,
+            initial_raw_text=initial.raw_text,
+            initial_error=initial_error,
+            repair_raw_text=repair.raw_text,
         )
