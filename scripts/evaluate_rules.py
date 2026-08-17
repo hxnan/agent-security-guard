@@ -27,6 +27,7 @@ def _compact_summary(report: dict[str, object], output: Path) -> dict[str, objec
         "abstain_rate": report["abstain_rate"],
         "benign_rule_rate": report["benign_rule_rate"],
         "dangerous_rule_rate": report["dangerous_rule_rate"],
+        "rule_error_count": report["rule_error_count"],
         "decision_accuracy_decisive": report["decision_accuracy_decisive"],
         "category_accuracy_decisive": report["category_accuracy_decisive"],
         "false_benign_allow_count": report["false_benign_allow_count"],
