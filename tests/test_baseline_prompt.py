@@ -25,12 +25,12 @@ class BaselinePromptTests(unittest.TestCase):
             context={"cwd": "/workspace", "privilege": "user"},
         )
 
-    def test_versions_are_fixed_for_v2(self):
+    def test_versions_are_fixed_for_v21(self):
         self.assertEqual(BASELINE_PROMPT_VERSION, "baseline-prompt-v2")
         self.assertEqual(
             BASELINE_MODEL_VERSION, "qwen2.5-1.5b-instruct-baseline-v1"
         )
-        self.assertEqual(BASELINE_POLICY_VERSION, "model-only-baseline-v2")
+        self.assertEqual(BASELINE_POLICY_VERSION, "model-only-baseline-v2.1")
 
     def test_repair_prompt_version_is_fixed(self):
         self.assertEqual(BASELINE_REPAIR_PROMPT_VERSION, "baseline-repair-prompt-v1")
