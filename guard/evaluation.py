@@ -16,6 +16,7 @@ from .baseline_prompt import (
     BASELINE_MODEL_VERSION,
     BASELINE_POLICY_VERSION,
     BASELINE_PROMPT_VERSION,
+    BASELINE_REPAIR_PROMPT_VERSION,
 )
 from .eval_dataset import EvalGoldRecord
 from .result_parsing import GeneratedResultError, extract_first_json_object
@@ -390,6 +391,7 @@ def evaluate_baseline(
     report = {
         "report_version": BASELINE_EVAL_REPORT_VERSION,
         "prompt_version": BASELINE_PROMPT_VERSION,
+        "repair_prompt_version": BASELINE_REPAIR_PROMPT_VERSION,
         "model_version": BASELINE_MODEL_VERSION,
         "policy_version": BASELINE_POLICY_VERSION,
         "freeze_version": freeze_version,
