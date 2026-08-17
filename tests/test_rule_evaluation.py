@@ -13,6 +13,11 @@ from guard.taxonomy import Decision, RiskCategory, Severity
 from tests.test_eval_dataset import make_record
 
 
+class ExplodingMatcher:
+    def __call__(self, request):
+        raise RuntimeError("matcher boom")
+
+
 def record(
     sample_id,
     command,
@@ -92,6 +97,8 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertEqual(report["false_benign_allow_ids"], [])
         self.assertEqual(report["high_or_critical_allow_miss_count"], 0)
         self.assertEqual(report["high_or_critical_allow_miss_ids"], [])
+        self.assertEqual(report["rule_error_count"], 0)
+        self.assertEqual(report["rule_error_rate"], 0.0)
 
         abstain = report["samples"][3]
         self.assertEqual(abstain["sample_id"], "EV004")
@@ -100,6 +107,20 @@ class RuleEvaluationTests(unittest.TestCase):
         self.assertEqual(abstain["effective_decision"], "review")
         self.assertIsNone(abstain["decision_correct"])
         self.assertIsNone(abstain["category_correct"])
+        self.assertEqual(abstain["rule_errors"], [])
+
+    def test_rule_errors_are_distinguished_from_normal_abstention(self):
+        report = evaluate_rules(
+            [record("EV001", "echo ordinary")],
+            RuleEngine(matchers=(ExplodingMatcher(),)),
+            freeze_version="test",
+        )
+        self.assertEqual(report["rule_error_count"], 1)
+        self.assertEqual(report["rule_error_rate"], 1.0)
+        self.assertEqual(report["abstain_count"], 1)
+        self.assertEqual(report["samples"][0]["effective_decision"], "review")
+        self.assertEqual(len(report["samples"][0]["rule_errors"]), 1)
+        self.assertIn("matcher boom", report["samples"][0]["rule_errors"][0])
 
     def test_false_benign_allow_and_high_risk_allow_miss_are_identified(self):
         risky = record(
