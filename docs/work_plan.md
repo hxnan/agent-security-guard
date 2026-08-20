@@ -13,8 +13,8 @@
 | P0 仓库基线 | 完成 | 可克隆、可安装、可测试的项目骨架与契约 |
 | P1 标准与评估集 | 完成 | Eval V1 independent-agent reviewed technical freeze |
 | P2 Model-only Baseline | 完成 | 本地 Qwen 的真实 100 条质量/性能基线 |
-| P3 Rule Engine + Fusion | 当前 | 用高置信规则降低明显误杀并补关键安全边界 |
-| P4 数据生产 | 后续 | 5k–10k 正式训练数据、去重与泄漏控制 |
+| P3 Rule Engine + Fusion | 完成 | 用高置信规则降低明显误杀并补关键安全边界 |
+| P4 数据生产 | 当前 | 已完成首批 1,000 条；继续扩展到 5k–10k |
 | P5 QLoRA 正式训练 | 后续 | 6GB GPU 可运行且优于基线 |
 | P6 服务化 | 后续 | 本地 API/SDK、审计、性能 |
 | P7 持续优化 | 后续 | Hard Cases、红队与发布回归 |
@@ -88,7 +88,7 @@ evaluation_wall_seconds        = 495.861809923
 
 结论：P2 已建立真实、可重复的 Model-only Baseline；1.5B zero-shot 模型不适合单独承担最终策略。主要问题已从格式失败转为 taxonomy 能力弱、benign 误杀高和 repair 依赖高。
 
-## 5. 当前：P3 Rule Engine + Fusion V1
+## 5. 已完成：P3 Rule Engine + Fusion V1
 
 设计：`docs/superpowers/specs/2026-08-17-p3-rule-engine-fusion-v1-design.md`
 
@@ -159,31 +159,62 @@ python scripts/evaluate_rules.py \
 - [x] benign FP / high-risk allow miss 按 source 归因。
 - [x] CPU 测试性能字段为 `not_measured`；正式 CLI 才测 live end-to-end latency/GPU metrics。
 - [x] `scripts/evaluate_fusion.py` target-GPU 入口。
-- [ ] **Rules-only 注册表验收通过后**，再运行正式 100 条 Fusion GPU 评估。
+- [x] Rules-only 注册表通过后完成正式 100 条 Fusion GPU 评估。
 
-正式 Fusion 命令（暂不执行）：
+正式 Fusion 命令：
 
 ```bash
 python scripts/evaluate_fusion.py \
   --output artifacts/fusion-eval-v1/report.json
 ```
 
+正式 Fusion V1：
+
+```text
+valid_output_rate             = 0.56
+risk_f1                       = 0.7317073170731707
+category_macro_f1             = 0.23778659611992944
+effective_decision_accuracy   = 0.42
+benign_false_positive_count   = 20
+high_risk_allow_miss_count    = 0
+rule_short_circuit_rate       = 0.06
+model_invocation_rate         = 0.94
+source rule/model/fallback    = 6/50/44
+rule_error_count              = 0
+peak_gpu_memory_mb            = 3043.16162109375
+```
+
 ## 6. P3 验收与 merge gate
 
 合并 P3.1 前必须满足：
 
-- [ ] PR 最新 HEAD Python 3.10/3.12 full CI 全绿。
-- [ ] full unittest、Blueprint、freeze、schema export/drift 门禁通过。
-- [ ] 100 条 committed-freeze Rules-only CPU evaluation 可执行。
-- [ ] changed-files scope 不包含 `data/eval-v1/**`、`schemas/v1/**`、`guard/result_parsing.py`、模型权重或 artifacts。
-- [ ] 生产 `guard/` / `scripts/` 中没有 `EV###` benchmark-specific 分支。
-- [ ] critical diff review 通过，尤其是 benign grammar、matcher exception fail-closed、Fusion no-semantic-rewrite。
-- [ ] squash merge 后 exact main commit 的 post-merge CI 全绿。
+- [x] PR 最新 HEAD Python 3.10/3.12 full CI 全绿。
+- [x] full unittest、Blueprint、freeze、schema export/drift 门禁通过。
+- [x] 100 条 committed-freeze Rules-only CPU evaluation 可执行。
+- [x] changed-files scope 不包含 `data/eval-v1/**`、`schemas/v1/**`、`guard/result_parsing.py`、模型权重或 artifacts。
+- [x] 生产 `guard/` / `scripts/` 中没有 `EV###` benchmark-specific 分支。
+- [x] critical diff review 通过，尤其是 benign grammar、matcher exception fail-closed、Fusion no-semantic-rewrite。
+- [x] squash merge 后 exact main commit 的 post-merge CI 全绿。
 
-## 7. P3 之后
+## 7. 当前：P4 数据生产
 
-1. 分析本地 Rules-only compact result；必要时只按行为级错误扩/收窄规则。
-2. Rules-only registry 通过后跑同一 Eval V1 的正式 Fusion GPU 报告，与 Model-only V2.1 公平对比。
-3. 使用 Model-only / Rules-only / Fusion 的真实错误分布规划 P4 训练数据，而不是围绕 Eval ID 写特例。
-4. P4 数据生产后进入 P5 正式 QLoRA/SFT。
-5. 最终进入 API/SDK、审计、压测和持续红队回归。
+- [x] strict P4 JSONL contract 与 CPU-only quality gate。
+- [x] train/validation ID、请求指纹和 semantic template 隔离。
+- [x] `EV###`、Eval/Gold provenance 和冻结 Eval 请求精确泄漏门禁。
+- [x] P4 Seed V1：100 个 curated semantic clusters × 10 variants。
+- [x] 800 train / 200 validation，按语义簇拆分。
+- [x] 10 个 100-row batch、完整 provenance、manifest 和 SHA-256。
+- [x] 1,000 条数据和 manifest 纳入版本控制，可字节级重建。
+- [ ] 抽检 Seed V1，按独立版本批次扩展到 5k–10k。
+- [ ] P4 数据门禁完成后进入 P5 正式 QLoRA/SFT。
+
+P4 生成与校验：
+
+```bash
+python scripts/prepare_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_train_v1.jsonl \
+  --validation data/val/agent_security_validation_v1.jsonl
+```
+
+后续进入 API/SDK、审计、压测和持续红队回归。
