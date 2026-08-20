@@ -2,6 +2,7 @@ import importlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from guard.training_config import SmokeTrainingConfig
 
@@ -124,6 +125,58 @@ class QloraConfigurationTests(unittest.TestCase):
                     (adapter / name).write_text("weight", encoding="utf-8")
                     with self.assertRaisesRegex(api.QloraError, "full-model"):
                         api.assert_adapter_only_output(adapter)
+
+    def test_full_model_weights_are_rejected_recursively(self):
+        api = self.api()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            adapter = Path(temporary_directory)
+            nested = adapter / "unexpected"
+            nested.mkdir()
+            (nested / "model.safetensors").write_text("weight", encoding="utf-8")
+
+            with self.assertRaisesRegex(api.QloraError, "unexpected/model.safetensors"):
+                api.assert_adapter_only_output(adapter)
+
+    def test_checkpoint_pruning_keeps_only_selected_best_checkpoint(self):
+        api = self.api()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            trainer = Path(temporary_directory) / "trainer"
+            best = trainer / "checkpoint-5"
+            final = trainer / "checkpoint-10"
+            best.mkdir(parents=True)
+            final.mkdir()
+
+            api.prune_trainer_checkpoints(trainer, best)
+
+            self.assertTrue(best.is_dir())
+            self.assertFalse(final.exists())
+            self.assertEqual([path.name for path in trainer.iterdir()], ["checkpoint-5"])
+
+    def test_runtime_failures_become_concise_domain_errors(self):
+        api = self.api()
+
+        class OutOfMemoryError(RuntimeError):
+            pass
+
+        torch = type(
+            "Torch", (), {"cuda": type("Cuda", (), {"OutOfMemoryError": OutOfMemoryError})}
+        )
+        oom = api.training_runtime_error(
+            OutOfMemoryError("allocation failed"),
+            torch,
+            "python retry.py --smaller",
+        )
+        load = api.training_runtime_error(
+            ValueError("bad local config"), torch, "python retry.py --smaller"
+        )
+
+        self.assertIsInstance(oom, api.QloraError)
+        self.assertIn("CUDA out of memory", str(oom))
+        self.assertIn("python retry.py --smaller", str(oom))
+        self.assertNotIn("Traceback", str(oom))
+        self.assertEqual(
+            str(load), "QLoRA training failed (ValueError): bad local config"
+        )
 
 
 if __name__ == "__main__":

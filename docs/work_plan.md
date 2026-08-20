@@ -14,7 +14,7 @@
 | P1 标准与评估集 | 完成 | Eval V1 independent-agent reviewed technical freeze |
 | P2 Model-only Baseline | 完成 | 本地 Qwen 的真实 100 条质量/性能基线 |
 | P3 Rule Engine + Fusion | 完成 | 用高置信规则降低明显误杀并补关键安全边界 |
-| P4 数据生产 | 当前 | 已完成首批 1,000 条；继续扩展到 5k–10k |
+| P4 数据与训练反馈 | 当前 | 已完成首批 1,000 条；先跑 QLoRA pilot 再定向扩展 |
 | P5 QLoRA 正式训练 | 后续 | 6GB GPU 可运行且优于基线 |
 | P6 服务化 | 后续 | 本地 API/SDK、审计、性能 |
 | P7 持续优化 | 后续 | Hard Cases、红队与发布回归 |
@@ -196,7 +196,7 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] critical diff review 通过，尤其是 benign grammar、matcher exception fail-closed、Fusion no-semantic-rewrite。
 - [x] squash merge 后 exact main commit 的 post-merge CI 全绿。
 
-## 7. 当前：P4 数据生产
+## 7. 当前：P4 数据与 QLoRA Pilot
 
 - [x] strict P4 JSONL contract 与 CPU-only quality gate。
 - [x] train/validation ID、请求指纹和 semantic template 隔离。
@@ -205,8 +205,13 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] 800 train / 200 validation，按语义簇拆分。
 - [x] 10 个 100-row batch、完整 provenance、manifest 和 SHA-256。
 - [x] 1,000 条数据和 manifest 纳入版本控制，可字节级重建。
-- [ ] 抽检 Seed V1，按独立版本批次扩展到 5k–10k。
-- [ ] P4 数据门禁完成后进入 P5 正式 QLoRA/SFT。
+- [x] P4 Seed QLoRA Pilot 的固定哈希、正式数据加载与 6GB 配置。
+- [x] pilot 训练/探测与 Baseline V2.1 六字段 semantic contract 对齐。
+- [x] 每 epoch validation、best eval-loss checkpoint、adapter-only manifest。
+- [x] held-out validation adapter smoke probe。
+- [ ] 目标 6GB GPU 完成 pilot 训练和 smoke 本地门禁。
+- [ ] pilot adapter 在冻结 Eval V1 上对比 Baseline/Fusion。
+- [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
 P4 生成与校验：
 
@@ -216,5 +221,16 @@ python scripts/check_training_dataset.py \
   --train data/train/agent_security_train_v1.jsonl \
   --validation data/val/agent_security_validation_v1.jsonl
 ```
+
+Pilot 本地门禁：
+
+```bash
+python scripts/train_p4_seed_qlora.py --preflight-only
+python scripts/train_p4_seed_qlora.py --overwrite-output
+python scripts/smoke_test_p4_adapter.py
+```
+
+Pilot 不是质量里程碑。先取得 validation loss、adapter strict-output probe
+和随后冻结 Eval V1 的真实误差，再决定扩数方向。
 
 后续进入 API/SDK、审计、压测和持续红队回归。
