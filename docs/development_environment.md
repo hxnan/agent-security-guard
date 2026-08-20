@@ -1,15 +1,15 @@
 # Development Environment
 
-Install test dependencies:
+Install the project in editable mode:
 
 ```bash
-pip install -r requirements-dev.txt
+python -m pip install -e .
 ```
 
 Run tests:
 
 ```bash
-pytest -v
+python -m unittest discover -s tests -v
 ```
 
-The runtime dependencies and development dependencies are intentionally separated.
+The test suite uses only the standard-library runner, matching GitHub Actions.
