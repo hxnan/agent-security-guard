@@ -1,4 +1,4 @@
-"""Configuration and fast-fail checks for the local QLoRA smoke run."""
+"""Configuration and fast-fail checks for local QLoRA runs."""
 
 from dataclasses import dataclass
 import importlib.metadata
@@ -21,6 +21,17 @@ class TrainingEnvironmentError(RuntimeError):
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = REPOSITORY_ROOT / "data" / "generated" / "smoke-v1"
 DEFAULT_OUTPUT_DIR = REPOSITORY_ROOT / "artifacts" / "smoke-qlora-v1"
+DEFAULT_P4_TRAIN_PATH = (
+    REPOSITORY_ROOT / "data" / "train" / "agent_security_train_v1.jsonl"
+)
+DEFAULT_P4_VALIDATION_PATH = (
+    REPOSITORY_ROOT / "data" / "val" / "agent_security_validation_v1.jsonl"
+)
+DEFAULT_P4_MANIFEST_PATH = (
+    REPOSITORY_ROOT / "data" / "train" / "agent_security_seed_v1_manifest.json"
+)
+DEFAULT_P4_EVAL_DIR = REPOSITORY_ROOT / "data" / "eval-v1" / "gold"
+DEFAULT_P4_OUTPUT_DIR = REPOSITORY_ROOT / "artifacts" / "p4-seed-qlora-pilot-v1"
 MINIMUM_GPU_MEMORY_BYTES = int(5.5 * 1024**3)
 MINIMUM_FREE_GPU_MEMORY_BYTES = int(4.75 * 1024**3)
 EXPECTED_PACKAGE_VERSIONS = {
@@ -49,20 +60,45 @@ class SmokeTrainingConfig:
     overwrite_output: bool = False
 
     def __post_init__(self) -> None:
-        for field in (
-            "max_length",
-            "num_train_epochs",
-            "micro_batch_size",
-            "gradient_accumulation_steps",
-            "learning_rate",
-        ):
-            value = getattr(self, field)
-            if not math.isfinite(value) or value <= 0:
-                raise TrainingConfigError(f"{field} must be finite and positive")
-        if self.lora_target not in {"all-linear", "attention"}:
-            raise TrainingConfigError("lora_target must be 'all-linear' or 'attention'")
-        if self.seed < 0:
-            raise TrainingConfigError("seed must be nonnegative")
+        _validate_training_values(self)
+
+
+def _validate_training_values(config) -> None:
+    for field in (
+        "max_length",
+        "num_train_epochs",
+        "micro_batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+    ):
+        value = getattr(config, field)
+        if not math.isfinite(value) or value <= 0:
+            raise TrainingConfigError(f"{field} must be finite and positive")
+    if config.lora_target not in {"all-linear", "attention"}:
+        raise TrainingConfigError("lora_target must be 'all-linear' or 'attention'")
+    if config.seed < 0:
+        raise TrainingConfigError("seed must be nonnegative")
+
+
+@dataclass(frozen=True)
+class P4SeedTrainingConfig:
+    model_path: Path | None = None
+    train_path: Path = DEFAULT_P4_TRAIN_PATH
+    validation_path: Path = DEFAULT_P4_VALIDATION_PATH
+    manifest_path: Path = DEFAULT_P4_MANIFEST_PATH
+    eval_dir: Path = DEFAULT_P4_EVAL_DIR
+    output_dir: Path = DEFAULT_P4_OUTPUT_DIR
+    max_length: int = 512
+    num_train_epochs: float = 2.0
+    micro_batch_size: int = 1
+    gradient_accumulation_steps: int = 16
+    learning_rate: float = 1e-4
+    lora_target: str = "all-linear"
+    seed: int = 42
+    overwrite_output: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_training_values(self)
 
 
 def resolve_training_model_path(
@@ -112,9 +148,9 @@ def _version_matches(package: str, actual: str | None) -> bool:
     return actual == expected
 
 
-def inspect_training_environment(
+def inspect_training_environment_for_files(
     model_path: Path,
-    data_dir: Path,
+    data_files: Mapping[str, Path],
     package_version: Callable[[str], str | None] = _package_version,
     cuda_probe: Callable[[], dict[str, object]] = _cuda_probe,
 ) -> dict[str, object]:
@@ -131,7 +167,7 @@ def inspect_training_environment(
     free_memory = int(cuda.get("free_memory_bytes", total_memory) or 0)
     missing_model_files = validate_model_directory(model_path)
     missing_data_files = [
-        name for name in ("train.jsonl", "validation.jsonl") if not (data_dir / name).is_file()
+        name for name, path in sorted(data_files.items()) if not path.is_file()
     ]
     ready = (
         not mismatches
@@ -145,7 +181,9 @@ def inspect_training_environment(
     return {
         "bf16_supported": bool(cuda.get("bf16_supported")),
         "cuda_available": bool(cuda.get("available")),
-        "data_dir": str(data_dir),
+        "data_files": {
+            name: str(path) for name, path in sorted(data_files.items())
+        },
         "gpu_memory_gb": round(total_memory / 1024**3, 2),
         "gpu_free_memory_gb": round(free_memory / 1024**3, 2),
         "gpu_name": cuda.get("gpu_name"),
@@ -156,6 +194,25 @@ def inspect_training_environment(
         "packages": packages,
         "ready": ready,
     }
+
+
+def inspect_training_environment(
+    model_path: Path,
+    data_dir: Path,
+    package_version: Callable[[str], str | None] = _package_version,
+    cuda_probe: Callable[[], dict[str, object]] = _cuda_probe,
+) -> dict[str, object]:
+    report = inspect_training_environment_for_files(
+        model_path,
+        {
+            "train.jsonl": data_dir / "train.jsonl",
+            "validation.jsonl": data_dir / "validation.jsonl",
+        },
+        package_version=package_version,
+        cuda_probe=cuda_probe,
+    )
+    report["data_dir"] = str(data_dir)
+    return report
 
 
 def assert_training_ready(report: Mapping[str, object]) -> None:

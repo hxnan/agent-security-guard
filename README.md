@@ -2,7 +2,7 @@
 
 面向 Agent 工具执行环节的本地轻量级安全护栏。在 Shell、PowerShell、CMD、Python 或其他工具调用真正执行前，对请求做静态风险分析并输出 `allow / review / block`。**项目不会执行待检测命令。**
 
-当前工程阶段是 **P4 正式训练数据生产**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1 的目标 GPU 评估；P4 Seed Dataset V1 已形成首批 1,000 条可复现训练/验证数据。
+当前工程阶段是 **P4 Seed QLoRA Pilot**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1 的目标 GPU 评估；P4 Seed Dataset V1 已形成首批 1,000 条可复现训练/验证数据，并已具备正式数据 pilot 训练入口。
 
 > Eval V1 是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。`data/eval-v1/freeze-manifest.json` 明确记录 `human_reviewed=false`。
 
@@ -18,6 +18,7 @@
 - Rules-only CPU evaluator 与 Fusion target-GPU evaluator。
 - matcher 异常不会产生隐式 allow：异常会被记录；benign shortcut 被抑制，无危险规则可决定时 fail-safe `review`。
 - P4 Seed V1：100 个独立语义簇、1,000 条记录、800/200 train/validation 隔离、10 个可追溯批次。
+- P4 QLoRA Pilot：固定数据哈希预检、6GB GPU 配置、每 epoch 验证、best eval-loss checkpoint、adapter-only provenance 与 held-out smoke probe。
 
 ## 快速开始
 
@@ -231,6 +232,20 @@ python scripts/check_training_dataset.py \
 
 生成器不加载模型，也不读取 Eval 标签或用 Eval 请求构造样本。生成结束后才读取冻结 Eval 请求指纹执行泄漏门禁。数据、manifest 和 SHA-256 均已提交，重复生成必须字节一致。
 
+## P4 Seed QLoRA Pilot V1
+
+在盲目扩展到 5k–10k 之前，先用冻结的 800/200 数据完成一次反馈型 pilot。它用于验证正式数据路径、Prompt、验证损失和 adapter 可加载性，不等于 P5 质量验收。
+
+```bash
+python scripts/train_p4_seed_qlora.py --preflight-only
+python scripts/train_p4_seed_qlora.py --overwrite-output
+python scripts/smoke_test_p4_adapter.py
+```
+
+固定默认值：4-bit NF4 + double quant + BF16、LoRA `r=8/alpha=16`、`max_length=512`、micro batch 1、gradient accumulation 16、2 epochs、learning rate `1e-4`。训练标签严格使用 Baseline/Fusion V2.1 的六字段 semantic contract，system-owned fields 不进入模型目标。训练不会截断超长记录；正式数据、manifest 或哈希漂移会在 ML 依赖加载前失败。
+
+本地输出位于 `artifacts/p4-seed-qlora-pilot-v1/`，不会提交到 Git。`training_manifest.json` 固定记录数据哈希、Prompt 版本、模型路径、完整有效超参数及 adapter 目录全部推理资产（含 tokenizer）的 SHA-256，并保持 `quality_milestone=false`。训练会程序化保留至多一个 best checkpoint；训练和 smoke 的预期运行失败（包括 CUDA OOM）只输出一条 JSON，OOM 会给出缩减重试参数。pilot 完成后将用 adapter-backed Eval V1 判断需要补强的类别与 hard cases。
+
 ## 最小 QLoRA 工程闭环
 
 仓库另有独立 smoke 闭环，仅用于证明 6GB GPU 上 4-bit NF4 QLoRA、Adapter 保存/重载可工作，不代表正式 P5 模型质量。
@@ -256,6 +271,6 @@ python scripts/smoke_test_adapter.py
 
 ## 近期路线
 
-1. 对 P4 Seed V1 进行数据抽检并扩展为 5,000–10,000 条版本化语料。
-2. 在 6GB GPU 上进行正式 QLoRA/SFT。
-3. 用冻结 Eval V1 与 Model-only/Fusion 基线做公平对比。
+1. 在 6GB GPU 上运行 P4 Seed QLoRA Pilot 与 held-out adapter smoke。
+2. 用冻结 Eval V1 对 pilot adapter 做公平评估并分析错误簇。
+3. 根据真实错误定向扩展为 5,000–10,000 条版本化语料，再进入 P5 正式 QLoRA/SFT。

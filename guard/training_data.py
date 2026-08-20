@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass
 import json
-from typing import Callable
+from typing import Callable, Protocol
 
-from .smoke_data import SmokeRecord
+from .contracts import GuardRequest, GuardResult
 from .taxonomy import Decision, RiskCategory, Severity
 
 
@@ -21,6 +21,13 @@ REQUIRED_RESULT_FIELDS = (
     "model_version",
     "policy_version",
 )
+TRAINING_PROMPT_VERSION = "guardresult-v1-causal-json-v1"
+
+
+class TrainingRecord(Protocol):
+    sample_id: str
+    request: GuardRequest
+    result: GuardResult
 
 
 def _enum_values(enum_type) -> str:
@@ -47,7 +54,7 @@ def _canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def format_training_messages(record: SmokeRecord) -> list[dict[str, str]]:
+def format_training_messages(record: TrainingRecord) -> list[dict[str, str]]:
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -62,13 +69,14 @@ def format_training_messages(record: SmokeRecord) -> list[dict[str, str]]:
 
 
 def tokenize_training_record(
-    record: SmokeRecord,
+    record: TrainingRecord,
     tokenizer,
     max_length: int,
+    message_formatter: Callable[[TrainingRecord], list[dict[str, str]]] = format_training_messages,
 ) -> dict[str, list[int]]:
     if max_length < 1:
         raise TrainingDataError("max_length must be positive")
-    messages = format_training_messages(record)
+    messages = message_formatter(record)
     prompt_ids = tokenizer.apply_chat_template(
         messages[:2], tokenize=True, add_generation_prompt=True
     )

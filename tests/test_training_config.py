@@ -169,6 +169,36 @@ class TrainingEnvironmentTests(unittest.TestCase):
         with self.assertRaisesRegex(api.TrainingEnvironmentError, "free GPU memory"):
             api.assert_training_ready(report)
 
+    def test_named_data_files_support_formal_train_and_validation_paths(self):
+        api = self.api()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            model_path, _ = self.make_layout(root)
+            train = root / "formal-train.jsonl"
+            validation = root / "formal-validation.jsonl"
+            train.write_text("{}\n", encoding="utf-8")
+            validation.write_text("{}\n", encoding="utf-8")
+
+            report = api.inspect_training_environment_for_files(
+                model_path,
+                {"train": train, "validation": validation},
+                package_version=lambda name: self.expected_versions.get(name),
+                cuda_probe=lambda: {
+                    "available": True,
+                    "bf16_supported": True,
+                    "gpu_name": "Test Ada GPU",
+                    "total_memory_bytes": 6 * 1024**3,
+                    "free_memory_bytes": 5 * 1024**3,
+                },
+            )
+
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["missing_data_files"], [])
+        self.assertEqual(
+            report["data_files"],
+            {"train": str(train), "validation": str(validation)},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

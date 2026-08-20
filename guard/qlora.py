@@ -2,9 +2,12 @@
 
 from dataclasses import asdict
 from fnmatch import fnmatch
+import hashlib
 import json
 from pathlib import Path
+import shutil
 import time
+from typing import Callable
 
 from .contracts import GuardRequest, GuardResult
 from .smoke_data import SmokeRecord, load_eval_templates, validate_smoke_records
@@ -76,7 +79,7 @@ def ensure_output_directory(config: SmokeTrainingConfig) -> None:
         if not config.overwrite_output:
             raise QloraError(
                 f"output directory already contains files: {config.output_dir}; "
-                "pass --overwrite-output only for this explicit smoke directory"
+                "pass --overwrite-output only for this explicit output directory"
             )
         backup = config.output_dir.with_name(
             f"{config.output_dir.name}.previous-{time.time_ns()}"
@@ -94,15 +97,87 @@ def assert_adapter_only_output(adapter_dir: Path) -> None:
         "pytorch_model-*.bin",
         "pytorch_model.bin.index.json",
     )
-    forbidden = [
-        path.name
-        for path in adapter_dir.iterdir()
-        if any(fnmatch(path.name, pattern) for pattern in forbidden_patterns)
-    ]
+    forbidden = sorted(
+        str(path.relative_to(adapter_dir))
+        for path in adapter_dir.rglob("*")
+        if path.is_file()
+        and any(fnmatch(path.name, pattern) for pattern in forbidden_patterns)
+    )
     if forbidden:
         raise QloraError(
             "full-model weight file found in adapter output: " + ", ".join(forbidden)
         )
+
+
+def adapter_artifact_sha256(adapter_dir: Path) -> dict[str, str]:
+    config_path = adapter_dir / "adapter_config.json"
+    tokenizer_config_path = adapter_dir / "tokenizer_config.json"
+    weights = [
+        path
+        for path in (
+            adapter_dir / "adapter_model.safetensors",
+            adapter_dir / "adapter_model.bin",
+        )
+        if path.is_file()
+    ]
+    if (
+        not config_path.is_file()
+        or not tokenizer_config_path.is_file()
+        or len(weights) != 1
+    ):
+        raise QloraError(
+            "adapter output must contain adapter_config.json, tokenizer_config.json, "
+            "and exactly one weight file"
+        )
+    paths = sorted(
+        (path for path in adapter_dir.rglob("*") if path.is_file()),
+        key=lambda path: str(path.relative_to(adapter_dir)),
+    )
+    try:
+        return {
+            str(path.relative_to(adapter_dir)): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+            for path in paths
+        }
+    except OSError as exc:
+        raise QloraError(f"cannot hash adapter artifact: {exc}") from exc
+
+
+def prune_trainer_checkpoints(
+    trainer_dir: Path, best_checkpoint: str | Path | None
+) -> None:
+    """Enforce the pilot's one-checkpoint retention contract."""
+    checkpoints = sorted(
+        (path for path in trainer_dir.glob("checkpoint-*") if path.is_dir()),
+        key=lambda path: path.name,
+    )
+    if len(checkpoints) <= 1:
+        return
+    if best_checkpoint is None:
+        raise QloraError(
+            "multiple trainer checkpoints exist but no best checkpoint was selected"
+        )
+    selected = Path(best_checkpoint).resolve()
+    if selected not in {path.resolve() for path in checkpoints}:
+        raise QloraError(
+            f"selected best checkpoint is missing from trainer output: {selected}"
+        )
+    try:
+        for checkpoint in checkpoints:
+            if checkpoint.resolve() != selected:
+                shutil.rmtree(checkpoint)
+    except OSError as exc:
+        raise QloraError(f"cannot prune trainer checkpoints: {exc}") from exc
+
+
+def training_runtime_error(
+    exc: Exception, torch_module, oom_retry_command: str
+) -> QloraError:
+    oom_type = getattr(getattr(torch_module, "cuda", None), "OutOfMemoryError", None)
+    if isinstance(oom_type, type) and isinstance(exc, oom_type):
+        return QloraError(f"CUDA out of memory; retry: {oom_retry_command}")
+    return QloraError(f"QLoRA training failed ({type(exc).__name__}): {exc}")
 
 
 def build_training_manifest(
@@ -160,6 +235,108 @@ def _write_json(path: Path, value: object) -> None:
     temporary.replace(path)
 
 
+def run_qlora_training(
+    config,
+    model_path: Path,
+    train_records,
+    validation_records,
+    arguments_builder: Callable,
+    manifest_builder: Callable[[int], dict[str, object]],
+    *,
+    metrics_validator: Callable[[dict[str, object]], None] | None = None,
+    oom_retry_command: str,
+    record_tokenizer: Callable = tokenize_training_record,
+) -> dict[str, object]:
+    try:
+        import peft
+        import torch
+        import transformers
+    except ImportError as exc:
+        raise QloraError(f"missing training dependency: {exc.name}") from exc
+
+    try:
+        transformers.set_seed(config.seed)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_path, local_files_only=True
+        )
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        train_data = [
+            record_tokenizer(record, tokenizer, config.max_length)
+            for record in train_records
+        ]
+        validation_data = [
+            record_tokenizer(record, tokenizer, config.max_length)
+            for record in validation_records
+        ]
+
+        quantization_config = build_quantization_config(torch, transformers)
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_path,
+            quantization_config=quantization_config,
+            device_map={"": 0},
+            dtype=torch.bfloat16,
+            local_files_only=True,
+        )
+        model.config.use_cache = False
+        model = peft.prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=True
+        )
+        model = peft.get_peft_model(
+            model, build_lora_config(peft, config.lora_target)
+        )
+        trainable_parameters = sum(
+            parameter.numel()
+            for parameter in model.parameters()
+            if parameter.requires_grad
+        )
+        trainer = transformers.Trainer(
+            model=model,
+            args=arguments_builder(transformers, config),
+            train_dataset=train_data,
+            eval_dataset=validation_data,
+            data_collator=CausalJsonCollator(tokenizer),
+            processing_class=tokenizer,
+        )
+        torch.cuda.reset_peak_memory_stats()
+        started = time.perf_counter()
+        train_result = trainer.train()
+        evaluation = trainer.evaluate()
+        prune_trainer_checkpoints(
+            config.output_dir / "trainer",
+            getattr(getattr(trainer, "state", None), "best_model_checkpoint", None),
+        )
+        elapsed = time.perf_counter() - started
+        metrics = {
+            "elapsed_seconds": round(elapsed, 3),
+            "evaluation": evaluation,
+            "peak_gpu_memory_mb": round(
+                torch.cuda.max_memory_allocated() / 1024**2, 2
+            ),
+            "training": train_result.metrics,
+        }
+        if metrics_validator is not None:
+            metrics_validator(metrics)
+
+        adapter_dir = config.output_dir / "adapter"
+        model.save_pretrained(adapter_dir, safe_serialization=True)
+        tokenizer.save_pretrained(adapter_dir)
+        manifest = manifest_builder(trainable_parameters)
+        manifest["adapter_sha256"] = adapter_artifact_sha256(adapter_dir)
+        _write_json(config.output_dir / "training_manifest.json", manifest)
+        _write_json(config.output_dir / "training_metrics.json", metrics)
+        assert_adapter_only_output(adapter_dir)
+        return {
+            "manifest": manifest,
+            "metrics": metrics,
+            "adapter_dir": str(adapter_dir),
+        }
+    except QloraError:
+        raise
+    except Exception as exc:
+        raise training_runtime_error(exc, torch, oom_retry_command) from exc
+
+
 def train_smoke(config: SmokeTrainingConfig) -> dict[str, object]:
     ensure_output_directory(config)
     model_path = resolve_training_model_path(config.model_path)
@@ -170,80 +347,21 @@ def train_smoke(config: SmokeTrainingConfig) -> dict[str, object]:
     )
     report = inspect_training_environment(model_path, config.data_dir)
     assert_training_ready(report)
-
-    try:
-        import peft
-        import torch
-        import transformers
-    except ImportError as exc:
-        raise QloraError(f"missing training dependency: {exc.name}") from exc
-
-    transformers.set_seed(config.seed)
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        model_path, local_files_only=True
-    )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    quantization_config = build_quantization_config(torch, transformers)
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_path,
-        quantization_config=quantization_config,
-        device_map={"": 0},
-        dtype=torch.bfloat16,
-        local_files_only=True,
-    )
-    model.config.use_cache = False
-    model = peft.prepare_model_for_kbit_training(
-        model, use_gradient_checkpointing=True
-    )
-    model = peft.get_peft_model(model, build_lora_config(peft, config.lora_target))
-    trainable_parameters = sum(
-        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
-    )
-
-    train_data = [
-        tokenize_training_record(record, tokenizer, config.max_length)
-        for record in train_records
-    ]
-    validation_data = [
-        tokenize_training_record(record, tokenizer, config.max_length)
-        for record in validation_records
-    ]
-    trainer = transformers.Trainer(
-        model=model,
-        args=build_training_arguments(transformers, config),
-        train_dataset=train_data,
-        eval_dataset=validation_data,
-        data_collator=CausalJsonCollator(tokenizer),
-        processing_class=tokenizer,
-    )
-    torch.cuda.reset_peak_memory_stats()
-    started = time.perf_counter()
-    try:
-        train_result = trainer.train()
-        evaluation = trainer.evaluate()
-    except torch.cuda.OutOfMemoryError:
-        print(
-            "CUDA OOM. Retry: python scripts/train_smoke_qlora.py "
-            "--max-length 256 --lora-target attention --overwrite-output"
-        )
-        raise
-    elapsed = time.perf_counter() - started
-
-    adapter_dir = config.output_dir / "adapter"
-    model.save_pretrained(adapter_dir, safe_serialization=True)
-    tokenizer.save_pretrained(adapter_dir)
     manifest_config = SmokeTrainingConfig(**{**asdict(config), "model_path": model_path})
-    manifest = build_training_manifest(
-        manifest_config, len(train_records), len(validation_records), trainable_parameters
+    return run_qlora_training(
+        config,
+        model_path,
+        train_records,
+        validation_records,
+        build_training_arguments,
+        lambda trainable_parameters: build_training_manifest(
+            manifest_config,
+            len(train_records),
+            len(validation_records),
+            trainable_parameters,
+        ),
+        oom_retry_command=(
+            "python scripts/train_smoke_qlora.py --max-length 256 "
+            "--lora-target attention --overwrite-output"
+        ),
     )
-    metrics = {
-        "elapsed_seconds": round(elapsed, 3),
-        "evaluation": evaluation,
-        "peak_gpu_memory_mb": round(torch.cuda.max_memory_allocated() / 1024**2, 2),
-        "training": train_result.metrics,
-    }
-    _write_json(config.output_dir / "training_manifest.json", manifest)
-    _write_json(config.output_dir / "training_metrics.json", metrics)
-    assert_adapter_only_output(adapter_dir)
-    return {"manifest": manifest, "metrics": metrics, "adapter_dir": str(adapter_dir)}
