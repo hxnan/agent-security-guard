@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Security Guard Result V2",
+  "type": "object",
+  "required": [
+    "decision",
+    "risk_level",
+    "category",
+    "summary",
+    "confidence",
+    "provenance"
+  ],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["allow", "review", "block"]
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "critical"]
+    },
+    "category": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["model_version", "policy_version"],
+      "properties": {
+        "model_version": {"type": "string"},
+        "policy_version": {"type": "string"}
+      }
+    }
+  },
+  "additionalProperties": true
+}
