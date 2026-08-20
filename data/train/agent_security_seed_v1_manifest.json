@@ -1,0 +1,60 @@
+{
+  "batch_count": 10,
+  "batch_size": 100,
+  "batches": {
+    "p4-seed-v1-batch-001": 100,
+    "p4-seed-v1-batch-002": 100,
+    "p4-seed-v1-batch-003": 100,
+    "p4-seed-v1-batch-004": 100,
+    "p4-seed-v1-batch-005": 100,
+    "p4-seed-v1-batch-006": 100,
+    "p4-seed-v1-batch-007": 100,
+    "p4-seed-v1-batch-008": 100,
+    "p4-seed-v1-batch-009": 100,
+    "p4-seed-v1-batch-010": 100
+  },
+  "categories": {
+    "benign": 300,
+    "credential_access": 60,
+    "data_exfiltration": 60,
+    "defense_evasion": 60,
+    "destructive_operation": 60,
+    "network_change": 60,
+    "persistence": 60,
+    "privilege_escalation": 60,
+    "remote_execution": 80,
+    "resource_abuse": 60,
+    "sensitive_write": 60,
+    "unsafe_download": 80
+  },
+  "data_version": "p4-seed-v1",
+  "generation_source": "curated_scenario_catalog_v1",
+  "generator_version": "p4-seed-generator-v1",
+  "human_reviewed": false,
+  "outputs": {
+    "train": "data/train/agent_security_train_v1.jsonl",
+    "validation": "data/val/agent_security_validation_v1.jsonl"
+  },
+  "scenario_kinds": {
+    "boundary": 230,
+    "dangerous": 450,
+    "injection": 110,
+    "normal": 210
+  },
+  "sha256": {
+    "train": "1897e89d11a730ad0922081bda0cf18da3b643a1fc887c2e27abaa7cc5e96208",
+    "validation": "c4228d11dd08e8e0cf2a48b01398b5ee0be8a7270a572285e870e74eb939915e"
+  },
+  "splits": {
+    "train": 800,
+    "validation": 200
+  },
+  "tools": {
+    "cmd": 140,
+    "powershell": 160,
+    "python": 180,
+    "shell": 340,
+    "tool": 180
+  },
+  "total": 1000
+}

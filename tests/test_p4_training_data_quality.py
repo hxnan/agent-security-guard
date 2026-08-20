@@ -51,6 +51,9 @@ def row(
             "generation_source": generation_source,
             "semantic_template": template,
             "split": split,
+            "scenario_kind": "normal",
+            "batch_id": "p4-seed-v1-batch-001",
+            "generator_version": "p4-seed-generator-v1",
         },
     }
     value.update(overrides)
@@ -70,6 +73,27 @@ class TrainingExampleContractTests(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             TrainingExample.model_validate(value)
+
+    def test_requires_complete_seed_provenance(self):
+        for field in ("scenario_kind", "batch_id", "generator_version"):
+            with self.subTest(field=field):
+                value = row()
+                value["metadata"].pop(field)
+                with self.assertRaises(ValidationError):
+                    TrainingExample.model_validate(value)
+
+    def test_rejects_invalid_seed_provenance_values(self):
+        invalid_values = {
+            "scenario_kind": "ordinary",
+            "batch_id": "batch-1",
+            "generator_version": "latest",
+        }
+        for field, invalid in invalid_values.items():
+            with self.subTest(field=field):
+                value = row()
+                value["metadata"][field] = invalid
+                with self.assertRaises(ValidationError):
+                    TrainingExample.model_validate(value)
 
     def test_rejects_benign_risk_contradiction(self):
         value = row()

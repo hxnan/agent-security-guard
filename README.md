@@ -2,7 +2,7 @@
 
 面向 Agent 工具执行环节的本地轻量级安全护栏。在 Shell、PowerShell、CMD、Python 或其他工具调用真正执行前，对请求做静态风险分析并输出 `allow / review / block`。**项目不会执行待检测命令。**
 
-当前工程阶段是 **P3 Rule Engine + Fusion V1**。P1 已冻结 100 条 Eval V1；P2 已在目标 RTX 1000 Ada 6GB 上完成 Model-only Baseline V2.1 的正式 100 条评估；P3 在此真实基线之上增加高置信确定性规则，并只在规则 abstain 时调用模型。
+当前工程阶段是 **P4 正式训练数据生产**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1 的目标 GPU 评估；P4 Seed Dataset V1 已形成首批 1,000 条可复现训练/验证数据。
 
 > Eval V1 是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。`data/eval-v1/freeze-manifest.json` 明确记录 `human_reviewed=false`。
 
@@ -17,6 +17,7 @@
 - Fusion V1：decisive rule 直接 short-circuit；无 decisive rule 才调用 Baseline V2.1；任何失败都 fail-safe `review`。
 - Rules-only CPU evaluator 与 Fusion target-GPU evaluator。
 - matcher 异常不会产生隐式 allow：异常会被记录；benign shortcut 被抑制，无危险规则可决定时 fail-safe `review`。
+- P4 Seed V1：100 个独立语义簇、1,000 条记录、800/200 train/validation 隔离、10 个可追溯批次。
 
 ## 快速开始
 
@@ -215,7 +216,20 @@ python scripts/evaluate_fusion.py \
   --output artifacts/fusion-eval-v1/report.json
 ```
 
-Fusion report 会另外区分 `rule / model / fallback` source、rule short-circuit rate、model invocation rate、模型 repair 指标以及真实端到端性能。CPU 单元测试中的性能字段明确为 `not_measured`，不会伪装成 GPU 实测。
+正式 Fusion V1 已完成：`risk_f1=0.732`、`category_macro_f1=0.238`、`valid_output_rate=0.56`、20 个 benign false positives、0 个 high-risk allow miss。100 条中 rule/model/fallback 分别为 6/50/44，证明 P4 应优先补 benign 辨识、taxonomy 和输出契约能力。
+
+## P4 Seed Dataset V1
+
+首批正式数据由 100 个人工策划语义簇确定性展开，每簇 10 个变体。训练使用 80 个簇（800 条），验证使用另外 20 个簇（200 条）；不存在按行随机拆分或跨 split 模板复用。
+
+```bash
+python scripts/prepare_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_train_v1.jsonl \
+  --validation data/val/agent_security_validation_v1.jsonl
+```
+
+生成器不加载模型，也不读取 Eval 标签或用 Eval 请求构造样本。生成结束后才读取冻结 Eval 请求指纹执行泄漏门禁。数据、manifest 和 SHA-256 均已提交，重复生成必须字节一致。
 
 ## 最小 QLoRA 工程闭环
 
@@ -233,7 +247,7 @@ python scripts/smoke_test_adapter.py
 ## 目录
 
 - `guard/`：契约、taxonomy、Eval freeze、Baseline、Rule Engine、Fusion 与 evaluation。
-- `data/`：版本化评估规划、Gold Draft、review、adjudication、freeze provenance。
+- `data/`：版本化 Eval freeze，以及 P4 train/validation 与生成 manifest。
 - `docs/`：技术方案、风险标准、设计与 implementation plans。
 - `scripts/`：校验、预测、训练、Rules-only/Fusion/Baseline 正式评估入口。
 - `schemas/`：语言无关 V1 请求/结果契约。
@@ -242,7 +256,6 @@ python scripts/smoke_test_adapter.py
 
 ## 近期路线
 
-1. 完成 P3.1 merge 后先跑 Rules-only CPU 报告，审查 rule precision、误放与 coverage。
-2. 规则注册表通过后，在同一 Eval V1 上跑正式 Fusion GPU 报告，与 Model-only V2.1 比较。
-3. 根据 Model-only / Rules-only / Fusion 的真实错误分布进入 P4 正式训练数据生产。
-4. 在 6GB GPU 上进行正式 QLoRA/SFT，再与 Baseline/Fusion 对比。
+1. 对 P4 Seed V1 进行数据抽检并扩展为 5,000–10,000 条版本化语料。
+2. 在 6GB GPU 上进行正式 QLoRA/SFT。
+3. 用冻结 Eval V1 与 Model-only/Fusion 基线做公平对比。
