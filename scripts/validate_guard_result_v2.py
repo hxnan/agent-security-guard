@@ -9,34 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
-REQUIRED_FIELDS = {
-    "decision",
-    "risk_level",
-    "category",
-    "summary",
-    "confidence",
-    "provenance",
-}
-
-
-def validate_result(result: dict) -> list[str]:
-    errors: list[str] = []
-    missing = REQUIRED_FIELDS - result.keys()
-    if missing:
-        errors.append(f"missing fields: {sorted(missing)}")
-
-    provenance = result.get("provenance", {})
-    if isinstance(provenance, dict):
-        for key in ("model_version", "policy_version"):
-            if not provenance.get(key):
-                errors.append(f"missing provenance.{key}")
-
-    confidence = result.get("confidence")
-    if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-        errors.append("confidence must be a number between 0 and 1")
-
-    return errors
+from guard.result_v2 import validate_result
 
 
 def main() -> None:

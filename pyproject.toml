@@ -13,4 +13,4 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["guard*"]
+include = ["guard*", "evaluation*"]
