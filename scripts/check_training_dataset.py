@@ -4,42 +4,38 @@ import argparse
 import json
 from pathlib import Path
 
-FORBIDDEN_MARKERS = ("EV001", "EV002", "eval-v1", "gold", "blueprint")
+from training.data_quality import scan_contamination, summarize, validate_sample
 
 
-def validate_sample(sample: dict) -> list[str]:
-    errors = []
-    output = sample.get("output", {})
-    for key in ("risk", "decision", "severity", "category", "summary", "confidence"):
-        if key not in output:
-            errors.append(f"missing:{key}")
-    text = json.dumps(sample, ensure_ascii=False)
-    for marker in FORBIDDEN_MARKERS:
-        if marker in text:
-            errors.append(f"forbidden:{marker}")
-    return errors
-
-
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset")
     args = parser.parse_args()
 
-    total = 0
+    samples = []
     errors = []
-    for line in Path(args.dataset).read_text(encoding="utf-8").splitlines():
+    contamination = []
+
+    for line_no, line in enumerate(Path(args.dataset).read_text(encoding="utf-8").splitlines(), 1):
         if not line.strip():
             continue
-        total += 1
-        errors.extend(validate_sample(json.loads(line)))
+        sample = json.loads(line)
+        samples.append(sample)
+        try:
+            validate_sample(sample)
+        except Exception as exc:
+            errors.append({"line": line_no, "error": str(exc)})
+        contamination.extend(scan_contamination(sample))
 
-    print(json.dumps({
-        "status": "ok" if not errors else "failed",
-        "samples": total,
-        "errors": len(errors),
-        "details": errors[:20],
-    }, ensure_ascii=False))
+    result = {
+        "status": "ok" if not errors and not contamination else "failed",
+        "summary": summarize(samples),
+        "schema_errors": errors,
+        "contamination": sorted(set(contamination)),
+    }
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["status"] == "ok" else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
