@@ -41,7 +41,7 @@ class TrainP4SeedQloraCliTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(defaults.max_length, 512)
+        self.assertEqual(defaults.max_length, 576)
         self.assertEqual(defaults.num_train_epochs, 2.0)
         self.assertEqual(defaults.learning_rate, 1e-4)
         self.assertEqual(overridden.max_length, 256)
@@ -110,7 +110,7 @@ class TrainP4SeedQloraCliTests(unittest.TestCase):
         with patch(
             "scripts.train_p4_seed_qlora.train_p4_seed",
             side_effect=QloraError(
-                "CUDA out of memory; retry: python scripts/train_p4_seed_qlora.py --max-length 256"
+                "CUDA out of memory; retry: python scripts/train_p4_seed_qlora.py --lora-target attention"
             ),
         ), redirect_stdout(output):
             exit_code = main([])

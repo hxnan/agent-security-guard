@@ -1,5 +1,6 @@
 import importlib
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -177,6 +178,63 @@ class QloraConfigurationTests(unittest.TestCase):
         self.assertEqual(
             str(load), "QLoRA training failed (ValueError): bad local config"
         )
+
+    def test_supplied_tokenizer_is_used_without_reloading_model_assets(self):
+        api = self.api()
+
+        class StopAfterTokenizer(ValueError):
+            pass
+
+        class SuppliedTokenizer:
+            pad_token_id = 0
+
+        class AutoTokenizer:
+            @staticmethod
+            def from_pretrained(*args, **kwargs):
+                raise AssertionError("tokenizer was reloaded")
+
+        class OutOfMemoryError(RuntimeError):
+            pass
+
+        transformers = type(
+            "Transformers",
+            (),
+            {
+                "AutoTokenizer": AutoTokenizer,
+                "set_seed": staticmethod(lambda seed: None),
+            },
+        )
+        torch = type(
+            "Torch",
+            (),
+            {"cuda": type("Cuda", (), {"OutOfMemoryError": OutOfMemoryError})},
+        )
+
+        def stop_after_tokenizer(record, tokenizer, max_length):
+            self.assertIsInstance(tokenizer, SuppliedTokenizer)
+            raise StopAfterTokenizer("used supplied tokenizer")
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            sys.modules,
+            {
+                "peft": type("Peft", (), {}),
+                "torch": torch,
+                "transformers": transformers,
+            },
+        ):
+            config = SmokeTrainingConfig(output_dir=Path(directory))
+            with self.assertRaisesRegex(api.QloraError, "used supplied tokenizer"):
+                api.run_qlora_training(
+                    config,
+                    Path("model"),
+                    [object()],
+                    [],
+                    lambda module, value: None,
+                    lambda trainable_parameters: {},
+                    oom_retry_command="python retry.py",
+                    record_tokenizer=stop_after_tokenizer,
+                    tokenizer=SuppliedTokenizer(),
+                )
 
 
 if __name__ == "__main__":

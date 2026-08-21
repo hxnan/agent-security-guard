@@ -32,6 +32,7 @@ DEFAULT_P4_MANIFEST_PATH = (
 )
 DEFAULT_P4_EVAL_DIR = REPOSITORY_ROOT / "data" / "eval-v1" / "gold"
 DEFAULT_P4_OUTPUT_DIR = REPOSITORY_ROOT / "artifacts" / "p4-seed-qlora-pilot-v1"
+DEFAULT_P4_MAX_LENGTH = 576
 MINIMUM_GPU_MEMORY_BYTES = int(5.5 * 1024**3)
 MINIMUM_FREE_GPU_MEMORY_BYTES = int(4.75 * 1024**3)
 EXPECTED_PACKAGE_VERSIONS = {
@@ -88,7 +89,7 @@ class P4SeedTrainingConfig:
     manifest_path: Path = DEFAULT_P4_MANIFEST_PATH
     eval_dir: Path = DEFAULT_P4_EVAL_DIR
     output_dir: Path = DEFAULT_P4_OUTPUT_DIR
-    max_length: int = 512
+    max_length: int = DEFAULT_P4_MAX_LENGTH
     num_train_epochs: float = 2.0
     micro_batch_size: int = 1
     gradient_accumulation_steps: int = 16

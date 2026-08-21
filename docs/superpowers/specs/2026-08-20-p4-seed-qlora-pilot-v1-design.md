@@ -40,7 +40,7 @@ The fixed pilot defaults target the known RTX 1000 Ada Laptop GPU with 6GB:
 base model                 Qwen2.5-1.5B-Instruct (local only)
 quantization               4-bit NF4, double quantization, BF16 compute
 LoRA                       r=8, alpha=16, dropout=0.05, all-linear
-maximum sequence length    512
+maximum sequence length    576
 micro batch                1
 gradient accumulation      16
 epochs                     2
@@ -70,6 +70,12 @@ runs data, model, package, CUDA, BF16, and free-memory checks without loading
 the model. A real run writes only local ignored artifacts under
 `artifacts/p4-seed-qlora-pilot-v1`.
 
+When the environment is otherwise ready, preflight loads the same local
+tokenizer used by training and audits all 1,000 records. It reports the
+configured limit, observed maximum, and overlength sample IDs. Formal training
+repeats this audit before replacing output or loading model weights. No row is
+truncated.
+
 `guard.p4_adapter_smoke` and `scripts/smoke_test_p4_adapter.py` load the saved
 adapter against the same local base model and generate one held-out validation
 record. The report records strict GuardResult validity and category agreement;
@@ -97,8 +103,9 @@ overwritten run is moved to a timestamped sibling backup.
 ## Failure behavior
 
 All expected configuration, data, artifact, dependency, and environment
-failures exit concisely without a traceback. CUDA OOM retains the existing
-explicit retry guidance using `--max-length 256 --lora-target attention`.
+failures exit concisely without a traceback. CUDA OOM retains explicit retry
+guidance using `--lora-target attention` while preserving the audited sequence
+length limit.
 Unexpected programmer errors are not silently converted into successful
 reports.
 

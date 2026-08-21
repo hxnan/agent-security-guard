@@ -2,14 +2,18 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from guard.p4_qlora import (
     EXPECTED_P4_SHA256,
     P4QloraError,
+    audit_p4_token_lengths,
     build_p4_training_arguments,
     build_p4_training_manifest,
     format_p4_training_messages,
     load_p4_dataset_bundle,
+    preflight_p4_seed_training,
+    train_p4_seed,
     validate_finite_training_metrics,
 )
 from guard.training_config import P4SeedTrainingConfig, TrainingConfigError
@@ -19,7 +23,7 @@ class P4SeedTrainingConfigTests(unittest.TestCase):
     def test_defaults_match_six_gb_pilot_contract(self):
         config = P4SeedTrainingConfig()
 
-        self.assertEqual(config.max_length, 512)
+        self.assertEqual(config.max_length, 576)
         self.assertEqual(config.num_train_epochs, 2.0)
         self.assertEqual(config.micro_batch_size, 1)
         self.assertEqual(config.gradient_accumulation_steps, 16)
@@ -93,7 +97,134 @@ class CapturingFactory:
         return kwargs
 
 
+class P4LengthAuditTokenizer:
+    eos_token_id = 2
+
+    def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+        prompt = [1] * 100
+        if len(messages) == 2:
+            return prompt
+        user_content = messages[1]["content"]
+        length = 514 if "a-10.cmd" in user_content else 500
+        return prompt + [3] * (length - len(prompt) - 1) + [self.eos_token_id]
+
+    def decode(self, token_ids, skip_special_tokens=False):
+        return ""
+
+
 class P4TrainingContractTests(unittest.TestCase):
+    ready_environment = {
+        "bf16_supported": True,
+        "cuda_available": True,
+        "gpu_free_memory_gb": 4.96,
+        "gpu_memory_gb": 6.0,
+        "missing_data_files": [],
+        "missing_model_files": [],
+        "package_mismatches": [],
+        "ready": True,
+    }
+
+    def test_length_audit_finds_real_overlength_sample_without_truncation(self):
+        bundle = load_p4_dataset_bundle(P4SeedTrainingConfig())
+
+        report = audit_p4_token_lengths(
+            bundle,
+            P4LengthAuditTokenizer(),
+            max_length=512,
+        )
+
+        self.assertEqual(report["max_observed_length"], 514)
+        self.assertEqual(report["overlength_count"], 1)
+        self.assertEqual(report["overlength_samples"], ["TR-000290:514"])
+        self.assertFalse(report["ready"])
+
+    def test_preflight_includes_token_audit_when_environment_is_ready(self):
+        with patch(
+            "guard.p4_qlora.inspect_training_environment_for_files",
+            return_value=self.ready_environment,
+        ), patch(
+            "guard.p4_qlora.load_p4_tokenizer",
+            return_value=P4LengthAuditTokenizer(),
+        ):
+            report = preflight_p4_seed_training(
+                P4SeedTrainingConfig(max_length=512)
+            )
+
+        self.assertEqual(report["status"], "not_ready")
+        self.assertEqual(report["tokenization"]["overlength_count"], 1)
+        self.assertEqual(
+            report["tokenization"]["overlength_samples"], ["TR-000290:514"]
+        )
+
+    def test_default_preflight_accepts_all_records_after_full_token_audit(self):
+        with patch(
+            "guard.p4_qlora.inspect_training_environment_for_files",
+            return_value=self.ready_environment,
+        ), patch(
+            "guard.p4_qlora.load_p4_tokenizer",
+            return_value=P4LengthAuditTokenizer(),
+        ):
+            report = preflight_p4_seed_training(P4SeedTrainingConfig())
+
+        self.assertEqual(report["status"], "ready")
+        self.assertEqual(report["tokenization"]["records_checked"], 1000)
+        self.assertEqual(report["tokenization"]["max_observed_length"], 514)
+        self.assertEqual(report["tokenization"]["overlength_count"], 0)
+
+    def test_training_reuses_the_tokenizer_that_passed_the_audit(self):
+        tokenizer = P4LengthAuditTokenizer()
+        observed = {}
+
+        def capture_training(*args, **kwargs):
+            observed["tokenizer"] = kwargs.get("tokenizer")
+            return {"tokenizer_reused": observed["tokenizer"] is tokenizer}
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = P4SeedTrainingConfig(output_dir=Path(directory) / "output")
+            with patch(
+                "guard.p4_qlora.inspect_training_environment_for_files",
+                return_value=self.ready_environment,
+            ), patch(
+                "guard.p4_qlora.load_p4_tokenizer", return_value=tokenizer
+            ), patch(
+                "guard.p4_qlora.run_qlora_training", side_effect=capture_training
+            ):
+                result = train_p4_seed(config)
+
+        self.assertEqual(result, {"tokenizer_reused": True})
+        self.assertIs(observed["tokenizer"], tokenizer)
+
+    def test_overlength_audit_preserves_existing_output_before_training(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.mkdir()
+            sentinel = output / "keep.txt"
+            sentinel.write_text("keep", encoding="utf-8")
+            config = P4SeedTrainingConfig(
+                output_dir=output,
+                max_length=512,
+                overwrite_output=True,
+            )
+
+            with patch(
+                "guard.p4_qlora.inspect_training_environment_for_files",
+                return_value=self.ready_environment,
+            ), patch(
+                "guard.p4_qlora.load_p4_tokenizer",
+                return_value=P4LengthAuditTokenizer(),
+            ):
+                try:
+                    train_p4_seed(config)
+                except Exception as exc:
+                    error = exc
+                else:
+                    error = None
+
+            self.assertIsInstance(error, P4QloraError)
+            self.assertIn("TR-000290:514", str(error))
+            self.assertTrue(sentinel.exists())
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
     def test_training_target_matches_baseline_v2_six_field_contract(self):
         bundle = load_p4_dataset_bundle(P4SeedTrainingConfig())
 

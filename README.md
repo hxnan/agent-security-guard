@@ -242,7 +242,7 @@ python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
 ```
 
-固定默认值：4-bit NF4 + double quant + BF16、LoRA `r=8/alpha=16`、`max_length=512`、micro batch 1、gradient accumulation 16、2 epochs、learning rate `1e-4`。训练标签严格使用 Baseline/Fusion V2.1 的六字段 semantic contract，system-owned fields 不进入模型目标。训练不会截断超长记录；正式数据、manifest 或哈希漂移会在 ML 依赖加载前失败。
+固定默认值：4-bit NF4 + double quant + BF16、LoRA `r=8/alpha=16`、`max_length=576`、micro batch 1、gradient accumulation 16、2 epochs、learning rate `1e-4`。训练标签严格使用 Baseline/Fusion V2.1 的六字段 semantic contract，system-owned fields 不进入模型目标。preflight 和正式训练都会用本地 tokenizer 全量审计 1,000 条记录并报告实际最大长度；训练不会截断超长记录，正式数据、manifest、哈希或 token 长度漂移都会在模型加载前失败。
 
 本地输出位于 `artifacts/p4-seed-qlora-pilot-v1/`，不会提交到 Git。`training_manifest.json` 固定记录数据哈希、Prompt 版本、模型路径、完整有效超参数及 adapter 目录全部推理资产（含 tokenizer）的 SHA-256，并保持 `quality_milestone=false`。训练会程序化保留至多一个 best checkpoint；训练和 smoke 的预期运行失败（包括 CUDA OOM）只输出一条 JSON，OOM 会给出缩减重试参数。pilot 完成后将用 adapter-backed Eval V1 判断需要补强的类别与 hard cases。
 
