@@ -246,6 +246,7 @@ def run_qlora_training(
     metrics_validator: Callable[[dict[str, object]], None] | None = None,
     oom_retry_command: str,
     record_tokenizer: Callable = tokenize_training_record,
+    tokenizer=None,
 ) -> dict[str, object]:
     try:
         import peft
@@ -256,9 +257,10 @@ def run_qlora_training(
 
     try:
         transformers.set_seed(config.seed)
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            model_path, local_files_only=True
-        )
+        if tokenizer is None:
+            tokenizer = transformers.AutoTokenizer.from_pretrained(
+                model_path, local_files_only=True
+            )
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
         train_data = [

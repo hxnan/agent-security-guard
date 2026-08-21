@@ -76,11 +76,16 @@ python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
 ```
 
-The fixed 6GB defaults are maximum length 512, micro batch 1, gradient
+The fixed 6GB defaults are maximum length 576, micro batch 1, gradient
 accumulation 16, two epochs, learning rate `1e-4`, all-linear LoRA, 4-bit NF4
 double quantization, BF16 compute, and gradient checkpointing. Validation and
 checkpoint selection run each epoch. At most one best eval-loss checkpoint is
 retained.
+
+Preflight and training both load the same local tokenizer and audit all 1,000
+records before model loading or output replacement. The JSON report includes
+the configured limit, observed maximum, checked-row count, and overlength
+sample IDs. No record is silently truncated.
 
 The committed records keep complete GuardResult V1 labels, while the assistant
 training target contains exactly the six Baseline/Fusion V2.1 semantic fields.
@@ -98,8 +103,8 @@ provenance drift before loading the model. It must remain
 frozen Eval V1 comparison is complete.
 
 Expected dependency, local-model, runtime, and CUDA OOM failures return one
-concise JSON result without a traceback. The OOM result includes the supported
-256-token/attention-only retry command.
+concise JSON result without a traceback. The OOM result retains the audited
+576-token limit and suggests the supported attention-only LoRA retry command.
 
 The existing smoke pipeline remains independent and backward compatible.
 

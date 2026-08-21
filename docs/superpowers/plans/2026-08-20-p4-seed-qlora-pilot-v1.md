@@ -16,7 +16,8 @@
 - Eval labels must never enter training or validation.
 - Validate data and exact SHA-256 values before importing ML dependencies.
 - Keep smoke QLoRA behavior and commands backward compatible.
-- Default to 4-bit NF4/double-quant/BF16, max length 512, micro batch 1, gradient accumulation 16, two epochs, learning rate `1e-4`, and seed 42.
+- Default to 4-bit NF4/double-quant/BF16, max length 576, micro batch 1, gradient accumulation 16, two epochs, learning rate `1e-4`, and seed 42.
+- Audit all 1,000 records with the local training tokenizer during preflight and again before output replacement; never truncate an overlength record.
 - Do not truncate overlength records.
 - Persist PEFT adapter-only output and mark the pilot `quality_milestone=false`.
 

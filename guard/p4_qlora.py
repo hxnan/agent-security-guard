@@ -161,6 +161,61 @@ def tokenize_p4_training_record(
     )
 
 
+def load_p4_tokenizer(model_path: Path):
+    try:
+        import transformers
+    except ImportError as exc:
+        raise P4QloraError(f"missing tokenizer dependency: {exc.name}") from exc
+    try:
+        return transformers.AutoTokenizer.from_pretrained(
+            model_path,
+            local_files_only=True,
+        )
+    except Exception as exc:
+        raise P4QloraError(
+            f"cannot load local tokenizer ({type(exc).__name__}): {exc}"
+        ) from exc
+
+
+def audit_p4_token_lengths(
+    bundle: P4DatasetBundle,
+    tokenizer,
+    max_length: int,
+) -> dict[str, object]:
+    lengths = []
+    for record in (*bundle.train, *bundle.validation):
+        tokenized = tokenize_p4_training_record(
+            record,
+            tokenizer,
+            max_length=2**31 - 1,
+        )
+        lengths.append((record.sample_id, len(tokenized["input_ids"])))
+    maximum = max((length for _, length in lengths), default=0)
+    overlength = [
+        f"{sample_id}:{length}"
+        for sample_id, length in lengths
+        if length > max_length
+    ]
+    return {
+        "configured_max_length": max_length,
+        "max_observed_length": maximum,
+        "overlength_count": len(overlength),
+        "overlength_samples": overlength[:20],
+        "records_checked": len(lengths),
+        "ready": not overlength,
+    }
+
+
+def assert_p4_token_lengths(report: dict[str, object]) -> None:
+    if report.get("ready") is not True:
+        raise P4QloraError(
+            "P4 token-length audit failed: "
+            f"max_observed_length={report.get('max_observed_length')}, "
+            f"configured_max_length={report.get('configured_max_length')}, "
+            f"overlength_samples={report.get('overlength_samples')}"
+        )
+
+
 def build_p4_training_arguments(transformers_module, config: P4SeedTrainingConfig):
     return transformers_module.TrainingArguments(
         output_dir=str(config.output_dir / "trainer"),
@@ -267,6 +322,17 @@ def preflight_p4_seed_training(config: P4SeedTrainingConfig) -> dict[str, object
             "validation": config.validation_path,
         },
     )
+    tokenization = {"ready": False, "status": "not_checked"}
+    if environment["ready"]:
+        tokenization = audit_p4_token_lengths(
+            bundle,
+            load_p4_tokenizer(resolved_model),
+            config.max_length,
+        )
+        tokenization["status"] = (
+            "ready" if tokenization["ready"] else "overlength"
+        )
+    ready = environment["ready"] and tokenization["ready"]
     return {
         "dataset": {
             "data_version": bundle.data_version,
@@ -275,7 +341,8 @@ def preflight_p4_seed_training(config: P4SeedTrainingConfig) -> dict[str, object
             "validation_count": len(bundle.validation),
         },
         "environment": environment,
-        "status": "ready" if environment["ready"] else "not_ready",
+        "status": "ready" if ready else "not_ready",
+        "tokenization": tokenization,
     }
 
 
@@ -291,6 +358,9 @@ def train_p4_seed(config: P4SeedTrainingConfig) -> dict[str, object]:
         },
     )
     assert_training_ready(environment)
+    tokenizer = load_p4_tokenizer(resolved_model)
+    token_audit = audit_p4_token_lengths(bundle, tokenizer, config.max_length)
+    assert_p4_token_lengths(token_audit)
     ensure_output_directory(config)
     return run_qlora_training(
         config,
@@ -306,8 +376,9 @@ def train_p4_seed(config: P4SeedTrainingConfig) -> dict[str, object]:
         ),
         metrics_validator=validate_finite_training_metrics,
         oom_retry_command=(
-            "python scripts/train_p4_seed_qlora.py --max-length 256 "
+            "python scripts/train_p4_seed_qlora.py "
             "--lora-target attention --overwrite-output"
         ),
         record_tokenizer=tokenize_p4_training_record,
+        tokenizer=tokenizer,
     )

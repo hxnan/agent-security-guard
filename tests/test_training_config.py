@@ -22,6 +22,9 @@ class TrainingConfigTests(unittest.TestCase):
         self.assertEqual(config.learning_rate, 2e-4)
         self.assertEqual(config.lora_target, "all-linear")
 
+        p4_config = api.P4SeedTrainingConfig()
+        self.assertEqual(p4_config.max_length, 576)
+
     def test_nonpositive_numeric_values_are_rejected(self):
         api = self.api()
         for field, value in (
