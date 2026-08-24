@@ -22,9 +22,9 @@ from guard.p4_qlora import (
 from guard.qlora import QloraError
 from guard.training_config import (
     DEFAULT_P4_COMBINED_OUTPUT_DIR,
+    DEFAULT_P4_COMBINED_MAX_LENGTH,
     DEFAULT_P4_EVAL_DIR,
     DEFAULT_P4_MANIFEST_PATH,
-    DEFAULT_P4_MAX_LENGTH,
     DEFAULT_P4_TARGETED_MANIFEST_PATH,
     DEFAULT_P4_TARGETED_TRAIN_PATH,
     DEFAULT_P4_TARGETED_VALIDATION_PATH,
@@ -71,7 +71,9 @@ def _parse_options(
     parser.add_argument(
         "--output-dir", type=Path, default=DEFAULT_P4_COMBINED_OUTPUT_DIR
     )
-    parser.add_argument("--max-length", type=int, default=DEFAULT_P4_MAX_LENGTH)
+    parser.add_argument(
+        "--max-length", type=int, default=DEFAULT_P4_COMBINED_MAX_LENGTH
+    )
     parser.add_argument("--num-train-epochs", type=float, default=1.0)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument(

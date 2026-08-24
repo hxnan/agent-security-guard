@@ -45,6 +45,7 @@ DEFAULT_P4_COMBINED_OUTPUT_DIR = (
     REPOSITORY_ROOT / "artifacts" / "p4-seed-targeted-qlora-v2"
 )
 DEFAULT_P4_MAX_LENGTH = 576
+DEFAULT_P4_COMBINED_MAX_LENGTH = 768
 MINIMUM_GPU_MEMORY_BYTES = int(5.5 * 1024**3)
 MINIMUM_FREE_GPU_MEMORY_BYTES = int(4.75 * 1024**3)
 EXPECTED_PACKAGE_VERSIONS = {
@@ -120,6 +121,7 @@ class P4CombinedTrainingConfig(P4SeedTrainingConfig):
     targeted_validation_path: Path = DEFAULT_P4_TARGETED_VALIDATION_PATH
     targeted_manifest_path: Path = DEFAULT_P4_TARGETED_MANIFEST_PATH
     output_dir: Path = DEFAULT_P4_COMBINED_OUTPUT_DIR
+    max_length: int = DEFAULT_P4_COMBINED_MAX_LENGTH
     num_train_epochs: float = 1.0
 
     def __post_init__(self) -> None:
@@ -127,6 +129,10 @@ class P4CombinedTrainingConfig(P4SeedTrainingConfig):
         if self.num_train_epochs != 1.0:
             raise TrainingConfigError(
                 "num_train_epochs must be exactly 1.0 for P4 combined V2"
+            )
+        if self.max_length != DEFAULT_P4_COMBINED_MAX_LENGTH:
+            raise TrainingConfigError(
+                "max_length must be exactly 768 for P4 combined V2"
             )
 
 

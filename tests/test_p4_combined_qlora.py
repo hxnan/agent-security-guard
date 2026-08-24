@@ -19,13 +19,15 @@ class P4CombinedTrainingTests(unittest.TestCase):
         config = P4CombinedTrainingConfig()
 
         self.assertEqual(config.num_train_epochs, 1.0)
-        self.assertEqual(config.max_length, 576)
+        self.assertEqual(config.max_length, 768)
         self.assertEqual(config.micro_batch_size, 1)
         self.assertEqual(config.gradient_accumulation_steps, 16)
         self.assertEqual(config.output_dir.name, "p4-seed-targeted-qlora-v2")
 
         with self.assertRaisesRegex(TrainingConfigError, "num_train_epochs"):
             P4CombinedTrainingConfig(num_train_epochs=2.0)
+        with self.assertRaisesRegex(TrainingConfigError, "max_length"):
+            P4CombinedTrainingConfig(max_length=576)
 
     def test_bundle_loads_seed_then_targeted_with_exact_source_hashes(self):
         bundle = load_p4_combined_dataset_bundle(P4CombinedTrainingConfig())
