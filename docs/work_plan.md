@@ -212,13 +212,13 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] 目标 6GB GPU 完成 pilot 训练和 smoke 本地门禁：峰值显存 3091.95 MB，best eval loss 0.3191，held-out strict-valid/category-match。
 - [x] adapter-backed Eval V1 CLI、artifact provenance 与 CPU-testable runtime boundary。
 - [x] pilot adapter 在冻结 Eval V1 上完成 Baseline/Fusion 公平对比：valid output 0.99、repair attempt 0.06、risk F1 0.894、category macro F1 0.635、effective decision accuracy 0.72。
-- [ ] 安全门禁：当前仍有 1 个 high-risk allow miss；必须先归因并通过定向扩数复评归零。
+- [ ] 安全门禁：第二轮 model-only 仍有 1 个 high-risk allow miss；已归因为明确未授权的 stdin 外传，并补高置信规则，等待 adapter Fusion GPU 复评确认归零。
 - [x] CPU-only adapter 报告诊断器：校验 provenance 并输出安全、格式、benign FP、decision 与 category 错误簇样本 ID。
 - [x] P4 Targeted Batch V1：50 个独立语义簇 × 10 变体，400/100 按簇隔离。
 - [x] Targeted V1 与 Seed V1 请求/template 双重隔离，冻结 Eval V1 精确请求零泄漏，5 个批次及 SHA-256 可重建。
 - [x] Targeted manifest 明确 `evaluation_adaptive=true`；Eval V1 降级为开发回归集，P5 泛化验收需要新 Eval V2。
 - [x] Seed V1 + Targeted V1 的 1,200/300 固定组合训练入口、双 manifest/hash 与隔离 preflight。
-- [ ] 在 6GB GPU 完成第二轮 QLoRA pilot、smoke 与 Eval V1 开发回归。
+- [x] 在 6GB GPU 完成第二轮 QLoRA pilot、smoke 与 Eval V1 开发回归：峰值显存 3437.51 MB、eval loss 0.2500、valid output 1.0、risk F1 0.893、category macro F1 0.655、effective decision accuracy 0.78。
 - [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
 P4 生成与校验：
@@ -250,10 +250,15 @@ python scripts/smoke_test_p4_adapter.py \
 python scripts/evaluate_p4_adapter.py \
   --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
   --output artifacts/p4-seed-targeted-eval-v2/report.json
+python scripts/evaluate_fusion.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --output artifacts/p4-seed-targeted-fusion-eval-v2/report.json
 ```
 
-Pilot 不是质量里程碑。当前格式、repair rate 和整体 F1 已明显改善，但
-high-risk allow miss 尚未归零；Targeted V1 已按真实错误簇构建，下一步是
-组合训练与复评。由于该数据使用了 Eval V1 错误反馈，最终结论必须转向 Eval V2。
+Pilot 不是质量里程碑。第二轮格式、repair rate、category macro F1 和 decision
+accuracy 已改善，但 model-only high-risk allow miss 尚未归零。该漏放是可信上下文
+明确标记 `destination_not_authorized` 的 stdin 外传；Rule Engine 已用上下文约束的
+高置信规则覆盖，下一步是 adapter Fusion GPU 复评。由于训练和规则调优使用了 Eval
+V1 错误反馈，最终结论必须转向 Eval V2。
 
 后续进入 API/SDK、审计、压测和持续红队回归。

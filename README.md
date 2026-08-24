@@ -2,7 +2,7 @@
 
 面向 Agent 工具执行环节的本地轻量级安全护栏。在 Shell、PowerShell、CMD、Python 或其他工具调用真正执行前，对请求做静态风险分析并输出 `allow / review / block`。**项目不会执行待检测命令。**
 
-当前工程阶段是 **P4 定向数据扩展**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1；P4 Seed Dataset V1 已完成首轮 6GB QLoRA pilot、smoke 和正式评估，正在根据真实错误簇构建定向训练批次。
+当前工程阶段是 **P4 adapter + Fusion 开发回归**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1；P4 已完成 Seed + Targeted 的第二轮 6GB QLoRA 训练、smoke 和 model-only Eval V1 回归，正在复验规则优先的 adapter Fusion 安全门禁。
 
 > Eval V1 是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。`data/eval-v1/freeze-manifest.json` 明确记录 `human_reviewed=false`。
 
@@ -15,7 +15,7 @@
 - Baseline V2.1：六字段 semantic output + system-owned envelope + 最多一次同模型 contract repair。
 - Rule Engine V1：高置信危险规则 + 极窄 benign introspection；确定性冲突处理与稳定 `rule_id`。
 - Fusion V1：decisive rule 直接 short-circuit；无 decisive rule 才调用 Baseline V2.1；任何失败都 fail-safe `review`。
-- Rules-only CPU evaluator 与 Fusion target-GPU evaluator。
+- Rules-only CPU evaluator 与支持基础模型/P4 adapter 的 Fusion target-GPU evaluator。
 - matcher 异常不会产生隐式 allow：异常会被记录；benign shortcut 被抑制，无危险规则可决定时 fail-safe `review`。
 - P4 Seed V1：100 个独立语义簇、1,000 条记录、800/200 train/validation 隔离、10 个可追溯批次。
 - P4 Targeted V1：50 个错误模式驱动但不复制 Eval 请求的独立语义簇、500 条记录、400/100 隔离、5 个可追溯批次。
@@ -278,9 +278,14 @@ python scripts/smoke_test_p4_adapter.py \
 python scripts/evaluate_p4_adapter.py \
   --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
   --output artifacts/p4-seed-targeted-eval-v2/report.json
+python scripts/evaluate_fusion.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --output artifacts/p4-seed-targeted-fusion-eval-v2/report.json
 ```
 
 6GB 默认值保持 NF4/BF16、micro batch 1、gradient accumulation 16 和 learning rate `1e-4`；组合训练固定使用 `max_length=768` 与 1 epoch。768 覆盖本地 Qwen tokenizer 审计得到的 711-token 最大样本，并继续禁止静默截断。输出 manifest 使用 `p4-seed-targeted-v2` / `qlora-p4-seed-targeted-v2`，adapter 校验与评估报告会记录并强制复核该组合契约。由于 Targeted V1 来自 Eval V1 诊断，该评估仅是开发回归；最终泛化仍须 untouched Eval V2。
+
+第二轮已在 RTX 1000 Ada 6GB 上完成：训练峰值显存 3437.51 MB、`train_loss=0.2603`、`eval_loss=0.2500`；smoke strict-valid/category-match。model-only Eval V1 为 `valid_output_rate=1.0`、`risk_f1=0.893`、`category_macro_f1=0.655`、`effective_decision_accuracy=0.78`，仍有 1 个 high-risk allow miss。该漏放是可信上下文已明确 `destination_not_authorized` 的 stdin 外传；高置信规则现在会直接 `block/critical/data_exfiltration`，adapter Fusion 正式复评用于确认端到端安全门禁与 provenance。
 
 ## 最小 QLoRA 工程闭环
 
