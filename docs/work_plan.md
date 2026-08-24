@@ -212,8 +212,9 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] 目标 6GB GPU 完成 pilot 训练和 smoke 本地门禁：峰值显存 3091.95 MB，best eval loss 0.3191，held-out strict-valid/category-match。
 - [x] adapter-backed Eval V1 CLI、artifact provenance 与 CPU-testable runtime boundary。
 - [x] pilot adapter 在冻结 Eval V1 上完成 Baseline/Fusion 公平对比：valid output 0.99、repair attempt 0.06、risk F1 0.894、category macro F1 0.635、effective decision accuracy 0.72。
-- [ ] 安全门禁：第二轮 model-only 仍有 1 个 high-risk allow miss；已归因为明确未授权的 stdin 外传，并补高置信规则，等待 adapter Fusion GPU 复评确认归零。
+- [x] 安全门禁：第二轮 model-only 的 1 个 high-risk allow miss 已由高置信规则覆盖；adapter Fusion GPU 复评 `high_risk_allow_miss=0`、`rule_error=0`。
 - [x] CPU-only adapter 报告诊断器：校验 provenance 并输出安全、格式、benign FP、decision 与 category 错误簇样本 ID。
+- [x] CPU-only adapter Fusion 报告诊断器：复核 adapter/freeze/source provenance、聚合计数并按 rule/model/fallback 归因错误簇。
 - [x] P4 Targeted Batch V1：50 个独立语义簇 × 10 变体，400/100 按簇隔离。
 - [x] Targeted V1 与 Seed V1 请求/template 双重隔离，冻结 Eval V1 精确请求零泄漏，5 个批次及 SHA-256 可重建。
 - [x] Targeted manifest 明确 `evaluation_adaptive=true`；Eval V1 降级为开发回归集，P5 泛化验收需要新 Eval V2。
@@ -253,12 +254,14 @@ python scripts/evaluate_p4_adapter.py \
 python scripts/evaluate_fusion.py \
   --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
   --output artifacts/p4-seed-targeted-fusion-eval-v2/report.json
+python scripts/analyze_p4_fusion_report.py \
+  --report artifacts/p4-seed-targeted-fusion-eval-v2/report.json
 ```
 
-Pilot 不是质量里程碑。第二轮格式、repair rate、category macro F1 和 decision
-accuracy 已改善，但 model-only high-risk allow miss 尚未归零。该漏放是可信上下文
-明确标记 `destination_not_authorized` 的 stdin 外传；Rule Engine 已用上下文约束的
-高置信规则覆盖，下一步是 adapter Fusion GPU 复评。由于训练和规则调优使用了 Eval
-V1 错误反馈，最终结论必须转向 Eval V2。
+Pilot 不是质量里程碑。adapter Fusion 开发回归达到 valid output 1.0、risk F1
+0.902、category macro F1 0.674、effective decision accuracy 0.81，并将 high-risk
+allow miss 降为 0；仍有 9 个 benign false positives。下一步先用 CPU diagnostics
+输出剩余错误簇，再冻结 untouched Eval V2。由于训练和规则调优使用了 Eval V1 错误
+反馈，最终结论必须转向 Eval V2。
 
 后续进入 API/SDK、审计、压测和持续红队回归。
