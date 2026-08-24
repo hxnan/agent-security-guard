@@ -251,7 +251,9 @@ class TrainingJsonlLoaderTests(unittest.TestCase):
 
             self.assertEqual(keys.request_fingerprints, {request_fingerprint(request)})
             self.assertEqual(keys.tool_commands, {("shell", "git status --short")})
+            self.assertEqual(keys.commands, {"git status --short"})
             self.assertEqual(keys.contexts, {canonical_context(request["context"])})
+            self.assertEqual(keys.context_sources, set())
             self.assertEqual(keys.semantic_templates, {"repo_status_read_only"})
 
 

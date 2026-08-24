@@ -146,8 +146,9 @@ def validate_targeted_profile(
     *,
     seed_request_fingerprints: set[str] | None = None,
     seed_semantic_templates: set[str] | None = None,
-    eval_tool_commands: set[tuple[str, str]] | frozenset[tuple[str, str]] | None = None,
+    eval_commands: set[str] | frozenset[str] | None = None,
     eval_contexts: set[str] | frozenset[str] | None = None,
+    eval_context_sources: set[str] | frozenset[str] | None = None,
     eval_semantic_templates: set[str] | frozenset[str] | None = None,
 ) -> TargetedDatasetSummary:
     errors: set[str] = set()
@@ -177,8 +178,9 @@ def validate_targeted_profile(
         errors.add("all targeted requests must be unique")
     seed_request_fingerprints = seed_request_fingerprints or set()
     seed_semantic_templates = seed_semantic_templates or set()
-    eval_tool_commands = eval_tool_commands or set()
+    eval_commands = eval_commands or set()
     eval_contexts = eval_contexts or set()
+    eval_context_sources = eval_context_sources or set()
     eval_semantic_templates = eval_semantic_templates or set()
     for record, fingerprint in zip(records, fingerprints):
         if fingerprint in seed_request_fingerprints:
@@ -189,13 +191,17 @@ def validate_targeted_profile(
             errors.add(
                 f"{record.sample_id} semantic_template overlaps P4 Seed V1"
             )
-        if (record.input.type.value, record.input.command) in eval_tool_commands:
+        if record.input.command in eval_commands:
             errors.add(
                 f"{record.sample_id} command duplicates frozen Eval V1"
             )
         if canonical_context(record.input.context) in eval_contexts:
             errors.add(
                 f"{record.sample_id} context duplicates frozen Eval V1"
+            )
+        if record.input.context.source in eval_context_sources:
+            errors.add(
+                f"{record.sample_id} context duplicates frozen Eval V1 (source)"
             )
         if record.metadata.semantic_template in eval_semantic_templates:
             errors.add(

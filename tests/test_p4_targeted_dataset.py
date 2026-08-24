@@ -125,9 +125,12 @@ class TargetedDatasetTests(unittest.TestCase):
     def test_profile_rejects_independent_eval_component_overlap(self):
         eval_keys = load_eval_isolation_keys(ROOT / "data" / "eval-v1" / "gold")
         train, validation = generate_targeted_dataset()
-        tool_type, command = next(iter(eval_keys.tool_commands))
+        eval_tool_type, command = next(iter(eval_keys.tool_commands))
+        tool_type = next(
+            item for item in ToolType if item.value != eval_tool_type
+        )
         copied_input = train[0].input.model_copy(
-            update={"type": ToolType(tool_type), "command": command}
+            update={"type": tool_type, "command": command}
         )
         copied_command = train[0].model_copy(update={"input": copied_input})
 
@@ -136,13 +139,14 @@ class TargetedDatasetTests(unittest.TestCase):
                 [copied_command, *train[1:]],
                 validation,
                 eval_keys.request_fingerprints,
-                eval_tool_commands=eval_keys.tool_commands,
+                eval_commands=eval_keys.commands,
                 eval_contexts=eval_keys.contexts,
+                eval_context_sources=eval_keys.context_sources,
                 eval_semantic_templates=eval_keys.semantic_templates,
             )
 
-        copied_context = train[0].input.context.model_validate_json(
-            next(iter(eval_keys.contexts))
+        copied_context = train[0].input.context.model_copy(
+            update={"source": next(iter(eval_keys.context_sources))}
         )
         copied_input = train[0].input.model_copy(update={"context": copied_context})
         copied_record = train[0].model_copy(update={"input": copied_input})
@@ -151,8 +155,9 @@ class TargetedDatasetTests(unittest.TestCase):
                 [copied_record, *train[1:]],
                 validation,
                 eval_keys.request_fingerprints,
-                eval_tool_commands=eval_keys.tool_commands,
+                eval_commands=eval_keys.commands,
                 eval_contexts=eval_keys.contexts,
+                eval_context_sources=eval_keys.context_sources,
                 eval_semantic_templates=eval_keys.semantic_templates,
             )
 
@@ -167,8 +172,9 @@ class TargetedDatasetTests(unittest.TestCase):
                 [copied_record, *train[1:]],
                 validation,
                 eval_keys.request_fingerprints,
-                eval_tool_commands=eval_keys.tool_commands,
+                eval_commands=eval_keys.commands,
                 eval_contexts=eval_keys.contexts,
+                eval_context_sources=eval_keys.context_sources,
                 eval_semantic_templates=eval_keys.semantic_templates,
             )
 

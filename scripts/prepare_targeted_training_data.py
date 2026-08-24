@@ -161,8 +161,9 @@ def prepare_targeted_dataset(
         eval_keys.request_fingerprints,
         seed_request_fingerprints=seed_request_fingerprints,
         seed_semantic_templates=seed_semantic_templates,
-        eval_tool_commands=eval_keys.tool_commands,
+        eval_commands=eval_keys.commands,
         eval_contexts=eval_keys.contexts,
+        eval_context_sources=eval_keys.context_sources,
         eval_semantic_templates=eval_keys.semantic_templates,
     )
     train_bytes = canonical_jsonl_bytes(train)
@@ -192,8 +193,9 @@ def prepare_targeted_dataset(
             eval_keys.request_fingerprints,
             seed_request_fingerprints=seed_request_fingerprints,
             seed_semantic_templates=seed_semantic_templates,
-            eval_tool_commands=eval_keys.tool_commands,
+            eval_commands=eval_keys.commands,
             eval_contexts=eval_keys.contexts,
+            eval_context_sources=eval_keys.context_sources,
             eval_semantic_templates=eval_keys.semantic_templates,
         )
         _publish_bundle(temporary_paths, outputs)

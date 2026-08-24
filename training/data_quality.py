@@ -51,7 +51,9 @@ def canonical_context(context: GuardContext | dict) -> str:
 class EvalIsolationKeys:
     request_fingerprints: frozenset[str]
     tool_commands: frozenset[tuple[str, str]]
+    commands: frozenset[str]
     contexts: frozenset[str]
+    context_sources: frozenset[str]
     semantic_templates: frozenset[str]
 
 
@@ -102,7 +104,9 @@ def load_eval_isolation_keys(eval_dir: Path | str) -> EvalIsolationKeys:
         raise DatasetQualityError(f"Eval directory does not exist: {eval_dir}")
     fingerprints: set[str] = set()
     tool_commands: set[tuple[str, str]] = set()
+    commands: set[str] = set()
     contexts: set[str] = set()
+    context_sources: set[str] = set()
     semantic_templates: set[str] = set()
     paths = sorted(eval_dir.glob("*.jsonl"))
     for path in paths:
@@ -123,7 +127,10 @@ def load_eval_isolation_keys(eval_dir: Path | str) -> EvalIsolationKeys:
                     raise ValueError("metadata.semantic_template must be non-empty")
                 fingerprints.add(request_fingerprint(request))
                 tool_commands.add((request.type.value, request.command))
+                commands.add(request.command)
                 contexts.add(canonical_context(request.context))
+                if request.context.source:
+                    context_sources.add(request.context.source)
                 semantic_templates.add(semantic_template)
             except (
                 json.JSONDecodeError,
@@ -140,7 +147,9 @@ def load_eval_isolation_keys(eval_dir: Path | str) -> EvalIsolationKeys:
     return EvalIsolationKeys(
         request_fingerprints=frozenset(fingerprints),
         tool_commands=frozenset(tool_commands),
+        commands=frozenset(commands),
         contexts=frozenset(contexts),
+        context_sources=frozenset(context_sources),
         semantic_templates=frozenset(semantic_templates),
     )
 
