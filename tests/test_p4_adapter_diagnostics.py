@@ -6,7 +6,9 @@ import sys
 import tempfile
 import unittest
 
+from guard.p4_adapter_backend import P4_COMBINED_ADAPTER_MODEL_VERSION
 from guard.p4_adapter_diagnostics import analyze_p4_adapter_report
+from guard.p4_qlora import EXPECTED_P4_COMBINED_SHA256
 from guard.eval_freeze import load_resolved_eval_v1
 from tests.test_p4_adapter_smoke import write_pilot_artifacts
 
@@ -56,6 +58,15 @@ def provenance_fixture():
         "method": "qlora-p4-seed-pilot",
         "training_prompt_version": "baseline-prompt-v2",
         "training_target": "baseline-semantic-v2",
+    }
+
+
+def combined_provenance_fixture():
+    return {
+        **provenance_fixture(),
+        "data_version": "p4-seed-targeted-v2",
+        "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+        "method": "qlora-p4-seed-targeted-v2",
     }
 
 
@@ -258,6 +269,21 @@ def full_freeze_report():
 
 
 class P4AdapterDiagnosticsTests(unittest.TestCase):
+    def test_accepts_combined_v2_report_and_model_provenance(self):
+        report = report_fixture()
+        report["model_version"] = P4_COMBINED_ADAPTER_MODEL_VERSION
+        report["adapter_provenance"] = combined_provenance_fixture()
+
+        diagnostics = analyze_p4_adapter_report(
+            report,
+            expected_freeze_version="eval-v1-agent-reviewed-rc1",
+            expected_samples=expected_samples(report),
+            expected_adapter_provenance=combined_provenance_fixture(),
+        )
+
+        self.assertEqual(diagnostics["status"], "ok")
+        self.assertEqual(diagnostics["high_risk_allow_miss_sample_ids"], ["EV001"])
+
     def test_prioritizes_safety_format_benign_and_category_error_samples(self):
         report = report_fixture()
         diagnostics = analyze_p4_adapter_report(
@@ -322,6 +348,16 @@ class P4AdapterDiagnosticsTests(unittest.TestCase):
         report["adapter_provenance"]["dataset_sha256"]["train"] = "0" * 64
 
         with self.assertRaisesRegex(ValueError, "adapter_provenance"):
+            analyze_p4_adapter_report(
+                report,
+                expected_freeze_version="eval-v1-agent-reviewed-rc1",
+                expected_samples=expected_samples(report),
+                expected_adapter_provenance=provenance_fixture(),
+            )
+
+        report = report_fixture()
+        report["adapter_provenance"]["method"] = {"unexpected": "object"}
+        with self.assertRaisesRegex(ValueError, "unexpected method"):
             analyze_p4_adapter_report(
                 report,
                 expected_freeze_version="eval-v1-agent-reviewed-rc1",
@@ -431,6 +467,58 @@ class P4AdapterDiagnosticsTests(unittest.TestCase):
         self.assertEqual(payload["total_samples"], 100)
         self.assertEqual(payload["high_risk_allow_miss_sample_ids"], [])
         self.assertEqual(payload["target_priority_sample_ids"], [])
+
+    def test_cli_emits_diagnostics_for_valid_combined_local_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            model = directory / "model"
+            model.mkdir()
+            adapter_dir = write_pilot_artifacts(directory / "output", model)
+            manifest_path = adapter_dir.parent / "training_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.update(
+                {
+                    "data_version": "p4-seed-targeted-v2",
+                    "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+                    "max_length": 768,
+                    "method": "qlora-p4-seed-targeted-v2",
+                    "num_train_epochs": 1.0,
+                    "train_count": 1200,
+                    "validation_count": 300,
+                }
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            report = full_freeze_report()
+            report["model_version"] = P4_COMBINED_ADAPTER_MODEL_VERSION
+            report["adapter_provenance"] = {
+                "adapter_dir": str(adapter_dir),
+                **{
+                    field: manifest[field]
+                    for field in (
+                        "adapter_sha256",
+                        "base_model_path",
+                        "data_version",
+                        "dataset_sha256",
+                        "method",
+                        "training_prompt_version",
+                        "training_target",
+                    )
+                },
+            }
+            path = directory / "report.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--report", str(path)],
+                cwd=REPOSITORY_ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["total_samples"], 100)
 
     def test_cli_rejects_incomplete_adapter_even_when_reported_hash_matches(self):
         with tempfile.TemporaryDirectory() as directory:
