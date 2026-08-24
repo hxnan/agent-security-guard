@@ -107,6 +107,91 @@ def _category_metrics(samples: Sequence[dict[str, object]]) -> dict[str, object]
     }
 
 
+def derive_fusion_aggregates(
+    samples: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    """Derive every non-performance Fusion aggregate from sample records."""
+    total = len(samples)
+    source_counts = Counter(str(sample["source"]) for sample in samples)
+    per_rule_contribution = Counter(
+        str(sample["selected_rule_id"])
+        for sample in samples
+        if sample["source"] == FusionSource.RULE.value
+        and sample["selected_rule_id"] is not None
+    )
+    model_invoked = [sample for sample in samples if sample["model_invoked"] is True]
+    model_repair_attempt_count = sum(
+        sample["model_repair_attempted"] is True for sample in model_invoked
+    )
+    model_repair_success_count = sum(
+        sample["model_repair_succeeded"] is True for sample in model_invoked
+    )
+    rule_error_count = sum(bool(sample["rule_errors"]) for sample in samples)
+    valid = [sample for sample in samples if sample["predicted"] is not None]
+    effective_correct = sum(
+        sample["effective_decision_correct"] is True for sample in samples
+    )
+    rule_short_circuit_count = source_counts[FusionSource.RULE.value]
+    benign_false_positives = sorted(
+        (
+            {"sample_id": str(sample["sample_id"]), "source": str(sample["source"])}
+            for sample in samples
+            if sample["expected"]["category"] == RiskCategory.BENIGN.value
+            and sample["predicted"] is not None
+            and sample["predicted"]["category"] != RiskCategory.BENIGN.value
+        ),
+        key=lambda row: (row["sample_id"], row["source"]),
+    )
+    high_risk_allow_misses = sorted(
+        (
+            {"sample_id": str(sample["sample_id"]), "source": str(sample["source"])}
+            for sample in samples
+            if sample["expected"]["risk"] is True
+            and sample["expected"]["severity"]
+            in {Severity.HIGH.value, Severity.CRITICAL.value}
+            and sample["effective_decision"] == Decision.ALLOW.value
+        ),
+        key=lambda row: (row["sample_id"], row["source"]),
+    )
+    return {
+        "source_counts": dict(sorted(source_counts.items())),
+        "rule_short_circuit_count": rule_short_circuit_count,
+        "rule_short_circuit_rate": _rate(rule_short_circuit_count, total),
+        "model_invocation_count": len(model_invoked),
+        "model_invocation_rate": _rate(len(model_invoked), total),
+        "rule_error_count": rule_error_count,
+        "rule_error_rate": _rate(rule_error_count, total),
+        "valid_output_count": len(valid),
+        "valid_output_rate": _rate(len(valid), total),
+        "per_rule_contribution": dict(sorted(per_rule_contribution.items())),
+        "model_repair_metrics": {
+            "model_invoked_count": len(model_invoked),
+            "attempt_count": model_repair_attempt_count,
+            "attempt_rate": _rate(model_repair_attempt_count, len(model_invoked)),
+            "success_count": model_repair_success_count,
+            "success_rate": _rate(
+                model_repair_success_count,
+                model_repair_attempt_count,
+            ),
+        },
+        "risk_metrics": _risk_metrics(samples),
+        "category_metrics": _category_metrics(samples),
+        "decision_metrics": {
+            "valid_predictions": len(valid),
+            "decision_accuracy_valid": _rate(
+                sum(sample["decision_correct"] is True for sample in valid),
+                len(valid),
+            ),
+            "effective_decision_accuracy_all": _rate(effective_correct, total),
+            "fallback_count": source_counts[FusionSource.FALLBACK.value],
+        },
+        "benign_false_positive_count": len(benign_false_positives),
+        "benign_false_positives": benign_false_positives,
+        "high_risk_allow_miss_count": len(high_risk_allow_misses),
+        "high_risk_allow_misses": high_risk_allow_misses,
+    }
+
+
 def _performance(
     samples: Sequence[dict[str, object]],
     *,
@@ -164,15 +249,6 @@ def evaluate_fusion(
     """Evaluate final Fusion outcomes while retaining their causal source."""
     started = time.perf_counter() if measure_performance else None
     samples: list[dict[str, object]] = []
-    source_counts: Counter[str] = Counter()
-    per_rule_contribution: Counter[str] = Counter()
-    model_invocation_count = 0
-    model_repair_attempt_count = 0
-    model_repair_success_count = 0
-    rule_error_count = 0
-    benign_false_positives: list[dict[str, str]] = []
-    high_risk_allow_misses: list[dict[str, str]] = []
-
     for gold in records:
         sample_started = time.perf_counter() if measure_performance else None
         outcome = predictor.predict(gold.request)
@@ -182,17 +258,6 @@ def evaluate_fusion(
             else None
         )
         source = outcome.source.value
-        source_counts[source] += 1
-        if outcome.rule_errors:
-            rule_error_count += 1
-        if outcome.source is FusionSource.RULE and outcome.selected_rule_id:
-            per_rule_contribution[outcome.selected_rule_id] += 1
-        if outcome.model_invoked:
-            model_invocation_count += 1
-            if outcome.model_outcome and outcome.model_outcome.repair_attempted:
-                model_repair_attempt_count += 1
-            if outcome.model_outcome and outcome.model_outcome.repair_succeeded:
-                model_repair_success_count += 1
 
         predicted = (
             outcome.result.model_dump(mode="json")
@@ -215,25 +280,6 @@ def evaluate_fusion(
             if outcome.result is not None
             else None
         )
-        benign_fp = (
-            expected.category is RiskCategory.BENIGN
-            and outcome.result is not None
-            and outcome.result.category is not RiskCategory.BENIGN
-        )
-        if benign_fp:
-            benign_false_positives.append(
-                {"sample_id": gold.sample_id, "source": source}
-            )
-        high_risk_miss = (
-            expected.risk
-            and expected.severity in {Severity.HIGH, Severity.CRITICAL}
-            and effective_decision is Decision.ALLOW
-        )
-        if high_risk_miss:
-            high_risk_allow_misses.append(
-                {"sample_id": gold.sample_id, "source": source}
-            )
-
         model_outcome = outcome.model_outcome
         samples.append(
             {
@@ -280,52 +326,14 @@ def evaluate_fusion(
         )
 
     wall_seconds = time.perf_counter() - started if started is not None else None
-    total = len(records)
-    valid = [sample for sample in samples if sample["predicted"] is not None]
-    effective_correct = sum(
-        sample["effective_decision_correct"] is True for sample in samples
-    )
-    rule_short_circuit_count = source_counts[FusionSource.RULE.value]
+    aggregates = derive_fusion_aggregates(samples)
 
     return {
         "report_version": FUSION_EVAL_REPORT_VERSION,
         "policy_version": FUSION_POLICY_VERSION,
         "freeze_version": freeze_version,
-        "total_samples": total,
-        "source_counts": dict(sorted(source_counts.items())),
-        "rule_short_circuit_count": rule_short_circuit_count,
-        "rule_short_circuit_rate": _rate(rule_short_circuit_count, total),
-        "model_invocation_count": model_invocation_count,
-        "model_invocation_rate": _rate(model_invocation_count, total),
-        "rule_error_count": rule_error_count,
-        "rule_error_rate": _rate(rule_error_count, total),
-        "valid_output_count": len(valid),
-        "valid_output_rate": _rate(len(valid), total),
-        "per_rule_contribution": dict(sorted(per_rule_contribution.items())),
-        "model_repair_metrics": {
-            "model_invoked_count": model_invocation_count,
-            "attempt_count": model_repair_attempt_count,
-            "attempt_rate": _rate(model_repair_attempt_count, model_invocation_count),
-            "success_count": model_repair_success_count,
-            "success_rate": _rate(
-                model_repair_success_count, model_repair_attempt_count
-            ),
-        },
-        "risk_metrics": _risk_metrics(samples),
-        "category_metrics": _category_metrics(samples),
-        "decision_metrics": {
-            "valid_predictions": len(valid),
-            "decision_accuracy_valid": _rate(
-                sum(sample["decision_correct"] is True for sample in valid),
-                len(valid),
-            ),
-            "effective_decision_accuracy_all": _rate(effective_correct, total),
-            "fallback_count": source_counts[FusionSource.FALLBACK.value],
-        },
-        "benign_false_positive_count": len(benign_false_positives),
-        "benign_false_positives": benign_false_positives,
-        "high_risk_allow_miss_count": len(high_risk_allow_misses),
-        "high_risk_allow_misses": high_risk_allow_misses,
+        "total_samples": len(samples),
+        **aggregates,
         "performance": _performance(
             samples,
             wall_seconds=wall_seconds,
