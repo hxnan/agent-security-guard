@@ -6,18 +6,26 @@ from collections import defaultdict
 from pathlib import Path
 import re
 
-from .p4_adapter_backend import P4_ADAPTER_MODEL_VERSION
+from .p4_adapter_backend import (
+    P4_ADAPTER_MODEL_VERSION,
+    P4_COMBINED_ADAPTER_MODEL_VERSION,
+)
 from .p4_adapter_smoke import validate_p4_adapter_artifacts
-from .p4_qlora import EXPECTED_P4_SHA256
+from .p4_qlora import EXPECTED_P4_COMBINED_SHA256, EXPECTED_P4_SHA256
 
 
 P4_ADAPTER_EVAL_REPORT_VERSION = "p4-adapter-eval-report-v1"
-_EXPECTED_PROVENANCE = {
-    "data_version": "p4-seed-v1",
-    "dataset_sha256": EXPECTED_P4_SHA256,
-    "method": "qlora-p4-seed-pilot",
-    "training_prompt_version": "baseline-prompt-v2",
-    "training_target": "baseline-semantic-v2",
+_ADAPTER_CONTRACTS = {
+    "qlora-p4-seed-pilot": {
+        "data_version": "p4-seed-v1",
+        "dataset_sha256": EXPECTED_P4_SHA256,
+        "model_version": P4_ADAPTER_MODEL_VERSION,
+    },
+    "qlora-p4-seed-targeted-v2": {
+        "data_version": "p4-seed-targeted-v2",
+        "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+        "model_version": P4_COMBINED_ADAPTER_MODEL_VERSION,
+    },
 }
 _EXPECTED_LABEL_FIELDS = ("risk", "decision", "severity", "category")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -119,8 +127,23 @@ def _unique_in_priority_order(*groups: list[str]) -> list[str]:
     return ordered
 
 
-def _validate_pilot_provenance(provenance: dict[str, object]) -> None:
-    for field, expected in _EXPECTED_PROVENANCE.items():
+def _validate_adapter_provenance(
+    provenance: dict[str, object],
+) -> dict[str, object]:
+    method = provenance.get("method")
+    if not isinstance(method, str):
+        raise ValueError("adapter_provenance has unexpected method")
+    contract = _ADAPTER_CONTRACTS.get(method)
+    if contract is None:
+        raise ValueError("adapter_provenance has unexpected method")
+    expected_fields = {
+        "data_version": contract["data_version"],
+        "dataset_sha256": contract["dataset_sha256"],
+        "method": method,
+        "training_prompt_version": "baseline-prompt-v2",
+        "training_target": "baseline-semantic-v2",
+    }
+    for field, expected in expected_fields.items():
         if provenance.get(field) != expected:
             raise ValueError(f"adapter_provenance has unexpected {field}")
     adapter_dir = provenance.get("adapter_dir")
@@ -152,6 +175,7 @@ def _validate_pilot_provenance(provenance: dict[str, object]) -> None:
             raise ValueError(
                 f"adapter_provenance has an invalid SHA-256 for {filename}"
             )
+    return contract
 
 
 def validate_local_adapter_provenance(
@@ -162,7 +186,7 @@ def validate_local_adapter_provenance(
         report.get("adapter_provenance"),
         "report.adapter_provenance",
     )
-    _validate_pilot_provenance(provenance)
+    _validate_adapter_provenance(provenance)
     adapter_dir = Path(str(provenance["adapter_dir"]))
     manifest = validate_p4_adapter_artifacts(adapter_dir)
     validated = {
@@ -180,7 +204,7 @@ def validate_local_adapter_provenance(
             )
         },
     }
-    _validate_pilot_provenance(validated)
+    _validate_adapter_provenance(validated)
     if provenance != validated:
         raise ValueError(
             "adapter_provenance does not match the validated training manifest"
@@ -218,18 +242,18 @@ def analyze_p4_adapter_report(
     """Extract safety-first error clusters without loading model weights."""
     if report.get("report_version") != P4_ADAPTER_EVAL_REPORT_VERSION:
         raise ValueError("report_version is not p4-adapter-eval-report-v1")
-    if report.get("model_version") != P4_ADAPTER_MODEL_VERSION:
-        raise ValueError("model_version is not the P4 pilot adapter")
     if report.get("freeze_version") != expected_freeze_version:
         raise ValueError("freeze_version does not match the current Eval V1 freeze")
     provenance = _require_mapping(
         report.get("adapter_provenance"),
         "report.adapter_provenance",
     )
-    _validate_pilot_provenance(provenance)
-    _validate_pilot_provenance(expected_adapter_provenance)
+    contract = _validate_adapter_provenance(provenance)
+    _validate_adapter_provenance(expected_adapter_provenance)
     if provenance != expected_adapter_provenance:
         raise ValueError("adapter_provenance does not match validated local assets")
+    if report.get("model_version") != contract["model_version"]:
+        raise ValueError("model_version does not match adapter provenance")
     raw_samples = report.get("samples")
     if not isinstance(raw_samples, list) or not all(
         isinstance(sample, dict) for sample in raw_samples
