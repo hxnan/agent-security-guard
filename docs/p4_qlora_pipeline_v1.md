@@ -75,6 +75,7 @@ python scripts/train_p4_seed_qlora.py --preflight-only
 python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
 python scripts/evaluate_p4_adapter.py
+python scripts/analyze_p4_adapter_report.py
 ```
 
 The fixed 6GB defaults are maximum length 576, micro batch 1, gradient
@@ -117,6 +118,13 @@ peak training memory 3091.95 MB, best validation loss 0.3191 at epoch 1, and a
 strict-valid held-out smoke result with matching category. These engineering
 results authorize formal evaluation but do not satisfy the P5 quality gate by
 themselves.
+
+The first formal adapter Eval V1 run achieved 0.99 valid-output rate, 0.06
+repair-attempt rate, 0.894 risk F1, 0.635 category macro F1, and 0.72 effective
+decision accuracy. One high-risk request was still allowed, so the zero-miss
+safety gate failed. The CPU-only analyzer validates report/model/freeze
+provenance and emits exact safety, validity, benign false-positive, decision,
+and category-confusion sample IDs for targeted P4 expansion.
 
 Expected dependency, local-model, runtime, and CUDA OOM failures return one
 concise JSON result without a traceback. The OOM result retains the audited
