@@ -113,6 +113,22 @@ class TrainingExampleContractTests(unittest.TestCase):
         self.assertEqual(example.metadata.data_version, "p4-targeted-v1")
         self.assertEqual(example.metadata.batch_id, "p4-targeted-v1-batch-001")
 
+    def test_accepts_targeted_v2_batch_and_generator_provenance(self):
+        value = row(sample_id="TR-001501")
+        value["metadata"].update(
+            {
+                "data_version": "p4-targeted-v2",
+                "generation_source": "curated_contrastive_catalog_v2",
+                "batch_id": "p4-targeted-v2-batch-001",
+                "generator_version": "p4-targeted-generator-v2",
+            }
+        )
+
+        example = TrainingExample.model_validate(value)
+
+        self.assertEqual(example.metadata.data_version, "p4-targeted-v2")
+        self.assertEqual(example.metadata.batch_id, "p4-targeted-v2-batch-001")
+
     def test_rejects_benign_risk_contradiction(self):
         value = row()
         value["output"]["risk"] = True

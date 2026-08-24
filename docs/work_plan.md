@@ -215,11 +215,15 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] 安全门禁：第二轮 model-only 的 1 个 high-risk allow miss 已由高置信规则覆盖；adapter Fusion GPU 复评 `high_risk_allow_miss=0`、`rule_error=0`。
 - [x] CPU-only adapter 报告诊断器：校验 provenance 并输出安全、格式、benign FP、decision 与 category 错误簇样本 ID。
 - [x] CPU-only adapter Fusion 报告诊断器：复核 adapter/freeze/source provenance、聚合计数并按 rule/model/fallback 归因错误簇。
+- [x] Fusion 诊断确认剩余 9 个 benign FP、3 个 risk FN、26 个 taxonomy 错误全部来自 model source；rule source 保持 0 安全漏放与 0 误报。
 - [x] P4 Targeted Batch V1：50 个独立语义簇 × 10 变体，400/100 按簇隔离。
 - [x] Targeted V1 与 Seed V1 请求/template 双重隔离，冻结 Eval V1 精确请求零泄漏，5 个批次及 SHA-256 可重建。
 - [x] Targeted manifest 明确 `evaluation_adaptive=true`；Eval V1 降级为开发回归集，P5 泛化验收需要新 Eval V2。
 - [x] Seed V1 + Targeted V1 的 1,200/300 固定组合训练入口、双 manifest/hash 与隔离 preflight。
 - [x] 在 6GB GPU 完成第二轮 QLoRA pilot、smoke 与 Eval V1 开发回归：峰值显存 3437.51 MB、eval loss 0.2500、valid output 1.0、risk F1 0.893、category macro F1 0.655、effective decision accuracy 0.78。
+- [x] P4 Targeted V2：50 组对比场景、100 个独立语义簇、1,000 条记录，800/200 按簇隔离；500 benign hard negatives、150 sensitive writes，并覆盖其余风险类。
+- [x] Targeted V2 与 Seed V1、Targeted V1、Eval V1 请求/template 隔离，10 个批次及 SHA-256 可重建。
+- [ ] 冻结未参与调参的 Eval V2，再开放 Seed + Targeted V1/V2 第三轮训练入口。
 - [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
 P4 生成与校验：
@@ -233,6 +237,10 @@ python scripts/prepare_targeted_training_data.py --force
 python scripts/check_training_dataset.py \
   --train data/train/agent_security_targeted_train_v1.jsonl \
   --validation data/val/agent_security_targeted_validation_v1.jsonl
+python scripts/prepare_contrastive_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_targeted_train_v2.jsonl \
+  --validation data/val/agent_security_targeted_validation_v2.jsonl
 ```
 
 Pilot 本地门禁：

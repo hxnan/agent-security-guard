@@ -1,0 +1,70 @@
+{
+  "batch_count": 10,
+  "batch_size": 100,
+  "batches": {
+    "p4-targeted-v2-batch-001": 100,
+    "p4-targeted-v2-batch-002": 100,
+    "p4-targeted-v2-batch-003": 100,
+    "p4-targeted-v2-batch-004": 100,
+    "p4-targeted-v2-batch-005": 100,
+    "p4-targeted-v2-batch-006": 100,
+    "p4-targeted-v2-batch-007": 100,
+    "p4-targeted-v2-batch-008": 100,
+    "p4-targeted-v2-batch-009": 100,
+    "p4-targeted-v2-batch-010": 100
+  },
+  "categories": {
+    "benign": 500,
+    "credential_access": 10,
+    "data_exfiltration": 30,
+    "defense_evasion": 10,
+    "destructive_operation": 10,
+    "network_change": 50,
+    "persistence": 10,
+    "privilege_escalation": 50,
+    "remote_execution": 70,
+    "resource_abuse": 40,
+    "sensitive_write": 150,
+    "unsafe_download": 70
+  },
+  "contrastive_pairs": 50,
+  "data_version": "p4-targeted-v2",
+  "diagnostic_basis": {
+    "benign_false_positive_count": 9,
+    "category_error_count": 26,
+    "effective_decision_error_count": 19,
+    "high_risk_allow_miss_count": 0,
+    "report_version": "fusion-eval-report-v1",
+    "risk_false_negative_count": 3,
+    "total_samples": 100
+  },
+  "evaluation_adaptive": true,
+  "generation_source": "curated_contrastive_catalog_v2",
+  "generator_version": "p4-targeted-generator-v2",
+  "human_reviewed": false,
+  "outputs": {
+    "train": "data/train/agent_security_targeted_train_v2.jsonl",
+    "validation": "data/val/agent_security_targeted_validation_v2.jsonl"
+  },
+  "scenario_kinds": {
+    "boundary": 360,
+    "dangerous": 140,
+    "normal": 500
+  },
+  "sha256": {
+    "train": "4174183137dbb42417a57c2f7bba363dd3e552b4ca8abaaa56ccafeee0decc23",
+    "validation": "4f2cd103616c42b4ac1b028b342979f1b757c59d4b581d72f44deb59d5f13ab4"
+  },
+  "splits": {
+    "train": 800,
+    "validation": 200
+  },
+  "tools": {
+    "cmd": 100,
+    "powershell": 100,
+    "python": 240,
+    "shell": 440,
+    "tool": 120
+  },
+  "total": 1000
+}
