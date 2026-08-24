@@ -35,6 +35,36 @@ class EvaluateFusionCliTests(unittest.TestCase):
             REPOSITORY_ROOT / "artifacts" / "fusion-eval-v1" / "report.json",
         )
 
+    def test_adapter_dir_is_an_optional_fusion_backend(self):
+        module = load_module()
+        args = module.build_parser().parse_args([])
+        self.assertIsNone(args.adapter_dir)
+
+        adapter_dir = REPOSITORY_ROOT / "artifacts" / "adapter-fixture"
+        args = module.build_parser().parse_args(["--adapter-dir", str(adapter_dir)])
+        self.assertEqual(args.adapter_dir, adapter_dir)
+
+    def test_adapter_provenance_preserves_training_identity(self):
+        module = load_module()
+        adapter_dir = REPOSITORY_ROOT / "artifacts" / "adapter-fixture"
+        manifest = {
+            "adapter_sha256": {"adapter_model.safetensors": "abc123"},
+            "base_model_path": "models/base/Qwen2.5-1.5B-Instruct",
+            "data_version": "p4-seed-targeted-v2",
+            "dataset_sha256": {"seed": {"train": "seed-hash"}},
+            "method": "qlora-p4-seed-targeted-v2",
+            "training_prompt_version": "baseline-prompt-v2",
+            "training_target": "baseline-semantic-v2",
+        }
+
+        self.assertEqual(
+            module._adapter_provenance(adapter_dir, manifest),
+            {
+                "adapter_dir": str(adapter_dir),
+                **manifest,
+            },
+        )
+
     def test_compact_summary_exposes_source_quality_safety_and_performance(self):
         module = load_module()
         report = {
@@ -94,6 +124,24 @@ class EvaluateFusionCliTests(unittest.TestCase):
             self.assertEqual(payload["stage"], "model_load")
             self.assertIn("missing model files", payload["error"])
             self.assertFalse(output.exists())
+            self.assertNotIn("Traceback", result.stderr)
+
+    def test_missing_adapter_exits_one_before_gpu_loading(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = self.run_cli(
+                "--model-path",
+                root / "missing-model",
+                "--adapter-dir",
+                root / "missing-adapter",
+                "--output",
+                root / "report.json",
+            )
+            self.assertEqual(result.returncode, 1)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["status"], "error")
+            self.assertEqual(payload["stage"], "adapter_load")
+            self.assertIn("adapter", payload["error"].lower())
             self.assertNotIn("Traceback", result.stderr)
 
 

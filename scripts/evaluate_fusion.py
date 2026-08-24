@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Rules-first Fusion V1 over resolved Eval V1 on the target GPU."""
+"""Run Rules-first Fusion V1 with a base model or P4 adapter on target GPU."""
 
 import argparse
 import json
@@ -17,7 +17,13 @@ from guard.environment import resolve_model_path
 from guard.eval_freeze import load_resolved_eval_v1
 from guard.fusion import FusionPredictor
 from guard.fusion_evaluation import evaluate_fusion, write_fusion_evaluation_report
+from guard.p4_adapter_backend import (
+    P4AdapterBackendError,
+    P4AdapterQwenBackend,
+    parse_p4_adapter_semantic_result,
+)
 from guard.rules import RuleEngine
+from guard.training_config import resolve_training_model_path
 from guard.transformers_backend import TransformersBackendError, TransformersQwenBackend
 
 
@@ -27,6 +33,7 @@ DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "fusion-eval-v1" / "report.json
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-path", type=Path)
+    parser.add_argument("--adapter-dir", type=Path)
     parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     return parser
@@ -42,7 +49,7 @@ def _error(stage: str, message: str, exit_code: int) -> int:
 
 
 def _environment_metadata(
-    backend: TransformersQwenBackend,
+    backend: TransformersQwenBackend | P4AdapterQwenBackend,
     model_path: Path,
 ) -> dict[str, object]:
     torch_module = backend.torch
@@ -56,6 +63,8 @@ def _environment_metadata(
         "cuda_device_name": None,
         "cuda_total_memory_mb": None,
     }
+    if isinstance(backend, P4AdapterQwenBackend):
+        metadata["adapter_dir"] = str(backend.adapter_dir)
     try:
         import transformers
 
@@ -69,6 +78,22 @@ def _environment_metadata(
     except Exception:
         pass
     return metadata
+
+
+def _adapter_provenance(
+    adapter_dir: Path,
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "adapter_dir": str(adapter_dir),
+        "adapter_sha256": manifest.get("adapter_sha256"),
+        "base_model_path": manifest.get("base_model_path"),
+        "data_version": manifest.get("data_version"),
+        "dataset_sha256": manifest.get("dataset_sha256"),
+        "method": manifest.get("method"),
+        "training_prompt_version": manifest.get("training_prompt_version"),
+        "training_target": manifest.get("training_target"),
+    }
 
 
 def _compact_summary(report: dict[str, object], output: Path) -> dict[str, object]:
@@ -110,16 +135,33 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, RuntimeError, ValueError) as exc:
         return _error("freeze_load", str(exc), 1)
 
-    resolved_model = resolve_model_path(args.model_path)
-    try:
-        backend = TransformersQwenBackend.from_local_model(args.model_path)
-    except TransformersBackendError as exc:
-        return _error("model_load", str(exc), 1)
-
-    baseline = BaselinePredictor(
-        backend,
-        max_new_tokens=args.max_new_tokens,
-    )
+    if args.adapter_dir is None:
+        resolved_model = resolve_model_path(args.model_path)
+        try:
+            backend = TransformersQwenBackend.from_local_model(args.model_path)
+        except TransformersBackendError as exc:
+            return _error("model_load", str(exc), 1)
+        baseline = BaselinePredictor(
+            backend,
+            max_new_tokens=args.max_new_tokens,
+        )
+    else:
+        try:
+            resolved_model = resolve_training_model_path(args.model_path)
+            backend = P4AdapterQwenBackend.from_local_adapter(
+                args.adapter_dir,
+                resolved_model,
+            )
+        except (OSError, P4AdapterBackendError, RuntimeError) as exc:
+            return _error("adapter_load", str(exc), 1)
+        baseline = BaselinePredictor(
+            backend,
+            max_new_tokens=args.max_new_tokens,
+            result_parser=lambda text: parse_p4_adapter_semantic_result(
+                text,
+                model_version=backend.model_version,
+            ),
+        )
     predictor = FusionPredictor(RuleEngine(), baseline)
 
     try:
@@ -133,6 +175,12 @@ def main(argv: list[str] | None = None) -> int:
         return _error("evaluation", f"evaluation failed: {exc}", 1)
 
     report["environment"] = _environment_metadata(backend, resolved_model)
+    if isinstance(backend, P4AdapterQwenBackend):
+        report["model_version"] = backend.model_version
+        report["adapter_provenance"] = _adapter_provenance(
+            backend.adapter_dir,
+            backend.manifest,
+        )
     report["max_new_tokens"] = args.max_new_tokens
     report["freeze_human_reviewed"] = bundle.manifest["human_reviewed"]
     report["freeze_reviewer_type"] = bundle.manifest["reviewer_type"]

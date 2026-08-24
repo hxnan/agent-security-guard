@@ -1,6 +1,7 @@
 """Pure high-confidence matcher functions for deterministic security rules."""
 
 import re
+import shlex
 
 from .contracts import GuardRequest
 from .rules import RuleMatch
@@ -36,6 +37,67 @@ def _contains_control_composition(command: str) -> bool:
     )
 
 
+def _has_verified_context_marker(request: GuardRequest, marker: str) -> bool:
+    source = request.context.source or ""
+    namespace, separator, payload = source.partition(":")
+    if not separator or namespace.strip().lower() != "verified_context":
+        return False
+    return marker.lower() in {
+        item.strip().lower()
+        for item in payload.split(",")
+        if item.strip()
+    }
+
+
+def _has_curl_stdin_upload_pipeline(command: str) -> bool:
+    if "\n" in command or "\r" in command:
+        return False
+    try:
+        lexer = shlex.shlex(
+            command,
+            posix=True,
+            punctuation_chars="|&;<>",
+        )
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        tokens = tuple(lexer)
+    except ValueError:
+        return False
+
+    for pipe_index, token in enumerate(tokens):
+        if token not in {"|", "|&"} or pipe_index + 1 >= len(tokens):
+            continue
+        if tokens[pipe_index + 1].lower() != "curl":
+            continue
+        segment: list[str] = []
+        for item in tokens[pipe_index + 2 :]:
+            if item in {
+                "|",
+                "|&",
+                "||",
+                "&&",
+                ";",
+                "&",
+                ">",
+                ">>",
+                "<",
+                "<<",
+            }:
+                break
+            segment.append(item)
+        for option_index, item in enumerate(segment):
+            lower = item.lower()
+            if lower in {"--data-binary=@-", "--upload-file=-"} or item == "-T-":
+                return True
+            if lower in {"--data-binary", "--upload-file"} or item == "-T":
+                if option_index + 1 < len(segment) and segment[option_index + 1] in {
+                    "@-",
+                    "-",
+                }:
+                    return True
+    return False
+
+
 def match_remote_execution_pipe_shell(request: GuardRequest) -> RuleMatch | None:
     if request.type is not ToolType.SHELL:
         return None
@@ -50,6 +112,25 @@ def match_remote_execution_pipe_shell(request: GuardRequest) -> RuleMatch | None
         decision=Decision.BLOCK,
         severity=Severity.CRITICAL,
         summary="远程内容直接交给解释器执行",
+        evidence=command,
+        priority=100,
+    )
+
+
+def match_unauthorized_stream_upload(request: GuardRequest) -> RuleMatch | None:
+    if request.type is not ToolType.SHELL:
+        return None
+    if not _has_verified_context_marker(request, "destination_not_authorized"):
+        return None
+    command = request.command
+    if not _has_curl_stdin_upload_pipeline(command):
+        return None
+    return _match(
+        "rule.data_exfiltration.unauthorized_stream_upload.v1",
+        category=RiskCategory.DATA_EXFILTRATION,
+        decision=Decision.BLOCK,
+        severity=Severity.CRITICAL,
+        summary="向未授权目的地发送数据流",
         evidence=command,
         priority=100,
     )
@@ -223,6 +304,7 @@ def match_benign_git_status(request: GuardRequest) -> RuleMatch | None:
 
 RULE_MATCHERS = (
     match_remote_execution_pipe_shell,
+    match_unauthorized_stream_upload,
     match_destructive_disk_format,
     match_destructive_unbounded_delete,
     match_private_key_read,
