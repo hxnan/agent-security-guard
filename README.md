@@ -280,7 +280,7 @@ python scripts/evaluate_p4_adapter.py \
   --output artifacts/p4-seed-targeted-eval-v2/report.json
 ```
 
-6GB 默认值保持 NF4/BF16、micro batch 1、gradient accumulation 16、`max_length=576` 和 learning rate `1e-4`，组合训练使用 1 epoch。输出 manifest 使用 `p4-seed-targeted-v2` / `qlora-p4-seed-targeted-v2`，adapter 校验与评估报告会记录组合模型版本。由于 Targeted V1 来自 Eval V1 诊断，该评估仅是开发回归；最终泛化仍须 untouched Eval V2。
+6GB 默认值保持 NF4/BF16、micro batch 1、gradient accumulation 16 和 learning rate `1e-4`；组合训练固定使用 `max_length=768` 与 1 epoch。768 覆盖本地 Qwen tokenizer 审计得到的 711-token 最大样本，并继续禁止静默截断。输出 manifest 使用 `p4-seed-targeted-v2` / `qlora-p4-seed-targeted-v2`，adapter 校验与评估报告会记录并强制复核该组合契约。由于 Targeted V1 来自 Eval V1 诊断，该评估仅是开发回归；最终泛化仍须 untouched Eval V2。
 
 ## 最小 QLoRA 工程闭环
 

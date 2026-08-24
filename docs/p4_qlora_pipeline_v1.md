@@ -137,7 +137,9 @@ python scripts/evaluate_p4_adapter.py \
   --output artifacts/p4-seed-targeted-eval-v2/report.json
 ```
 
-The combined run uses one epoch and the same 6 GB NF4/BF16 memory contract.
+The combined run uses one epoch, a fixed 768-token limit, and the same 6 GB
+NF4/BF16 memory contract. The limit covers the observed 711-token maximum from
+the complete local Qwen tokenizer audit without truncation.
 Eval V1 is development-adaptive for this run; only an untouched Eval V2 can
 support a final generalization claim.
 
@@ -149,8 +151,9 @@ provenance and emits exact safety, validity, benign false-positive, decision,
 and category-confusion sample IDs for targeted P4 expansion.
 
 Expected dependency, local-model, runtime, and CUDA OOM failures return one
-concise JSON result without a traceback. The OOM result retains the audited
-576-token limit and suggests the supported attention-only LoRA retry command.
+concise JSON result without a traceback. The OOM result retains the run's
+fixed audited token limit and suggests the supported attention-only LoRA retry
+command.
 
 The existing smoke pipeline remains independent and backward compatible.
 

@@ -15,6 +15,7 @@ class TrainP4CombinedQloraCliTests(unittest.TestCase):
         config = parse_config([])
 
         self.assertEqual(config.num_train_epochs, 1.0)
+        self.assertEqual(config.max_length, 768)
         self.assertEqual(config.output_dir.name, "p4-seed-targeted-qlora-v2")
         self.assertEqual(
             config.targeted_train_path.name,
@@ -22,6 +23,8 @@ class TrainP4CombinedQloraCliTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(TrainingConfigError, "exactly 1.0"):
             parse_config(["--num-train-epochs", "2"])
+        with self.assertRaisesRegex(TrainingConfigError, "max_length"):
+            parse_config(["--max-length", "576"])
 
     def test_cpu_preflight_reports_combined_dataset_before_environment(self):
         completed = subprocess.run(

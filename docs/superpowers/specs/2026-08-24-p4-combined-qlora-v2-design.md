@@ -11,7 +11,8 @@ files. The combined run contains 1,200 training and 300 validation records.
 - data version: `p4-seed-targeted-v2`;
 - method: `qlora-p4-seed-targeted-v2`;
 - output: `artifacts/p4-seed-targeted-qlora-v2`;
-- one epoch, micro batch 1, gradient accumulation 16, NF4, BF16;
+- one epoch, max length 768, micro batch 1, gradient accumulation 16, NF4,
+  BF16; 768 covers the observed 711-token maximum without truncation;
 - exact Seed and Targeted file hashes and both manifests are checked before
   environment or model loading;
 - Targeted data is revalidated against Seed overlap and independent frozen

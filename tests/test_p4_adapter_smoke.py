@@ -180,6 +180,7 @@ class P4AdapterArtifactTests(unittest.TestCase):
                     "data_version": "p4-seed-targeted-v2",
                     "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
                     "method": "qlora-p4-seed-targeted-v2",
+                    "max_length": 768,
                     "num_train_epochs": 1.0,
                     "train_count": 1200,
                     "validation_count": 300,
@@ -190,6 +191,31 @@ class P4AdapterArtifactTests(unittest.TestCase):
             validated = validate_p4_adapter_artifacts(adapter, model)
 
         self.assertEqual(validated["method"], "qlora-p4-seed-targeted-v2")
+        self.assertEqual(validated["max_length"], 768)
+
+    def test_combined_artifacts_reject_max_length_identity_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            model = Path(directory) / "model"
+            model.mkdir()
+            adapter = write_pilot_artifacts(output, model)
+            manifest_path = output / "training_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.update(
+                {
+                    "data_version": "p4-seed-targeted-v2",
+                    "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+                    "method": "qlora-p4-seed-targeted-v2",
+                    "max_length": 576,
+                    "num_train_epochs": 1.0,
+                    "train_count": 1200,
+                    "validation_count": 300,
+                }
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(P4AdapterSmokeError, "max_length"):
+                validate_p4_adapter_artifacts(adapter, model)
 
     def test_combined_artifacts_reject_epoch_identity_drift(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -204,6 +230,7 @@ class P4AdapterArtifactTests(unittest.TestCase):
                     "data_version": "p4-seed-targeted-v2",
                     "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
                     "method": "qlora-p4-seed-targeted-v2",
+                    "max_length": 768,
                     "num_train_epochs": 2.0,
                     "train_count": 1200,
                     "validation_count": 300,

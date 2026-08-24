@@ -126,6 +126,7 @@ def _validate_adapter_config(
 def _validate_training_manifest_contract(
     manifest: dict[str, object], *, train_count: int, validation_count: int,
     num_train_epochs: float | None = None,
+    max_length: int | None = None,
 ) -> None:
     fixed = {
         "checkpoint_policy": P4_CHECKPOINT_POLICY,
@@ -143,6 +144,8 @@ def _validate_training_manifest_contract(
     }
     if num_train_epochs is not None:
         fixed["num_train_epochs"] = num_train_epochs
+    if max_length is not None:
+        fixed["max_length"] = max_length
     for field, expected in fixed.items():
         if manifest.get(field) != expected:
             raise P4AdapterSmokeError(
@@ -245,6 +248,7 @@ def validate_p4_adapter_artifacts(
             "train_count": 800,
             "validation_count": 200,
             "num_train_epochs": None,
+            "max_length": None,
         },
         "qlora-p4-seed-targeted-v2": {
             "data_version": "p4-seed-targeted-v2",
@@ -252,6 +256,7 @@ def validate_p4_adapter_artifacts(
             "train_count": 1200,
             "validation_count": 300,
             "num_train_epochs": 1.0,
+            "max_length": 768,
         },
     }
     contract = contracts.get(manifest.get("method"))
@@ -278,6 +283,7 @@ def validate_p4_adapter_artifacts(
         train_count=contract["train_count"],
         validation_count=contract["validation_count"],
         num_train_epochs=contract["num_train_epochs"],
+        max_length=contract["max_length"],
     )
     _validate_adapter_config(adapter_config, manifest, expected_model)
     _validate_adapter_hashes(adapter_dir, manifest)
