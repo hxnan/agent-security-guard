@@ -10,12 +10,14 @@ import unittest
 from unittest.mock import patch
 
 from guard.p4_adapter_smoke import (
+    P4_COMBINED_ADAPTER_MODEL_VERSION,
     P4AdapterSmokeError,
     inference_runtime_error,
     validate_p4_generated_result,
     validate_p4_adapter_artifacts,
+    p4_adapter_model_version,
 )
-from guard.p4_qlora import EXPECTED_P4_SHA256
+from guard.p4_qlora import EXPECTED_P4_COMBINED_SHA256, EXPECTED_P4_SHA256
 from scripts.smoke_test_p4_adapter import main as smoke_cli_main
 
 
@@ -143,6 +145,16 @@ class P4AdapterArtifactTests(unittest.TestCase):
             validate_p4_generated_result(
                 json.dumps({**semantic, "risk": False}, ensure_ascii=False)
             )
+
+        combined = validate_p4_generated_result(
+            json.dumps(semantic, ensure_ascii=False),
+            model_version=P4_COMBINED_ADAPTER_MODEL_VERSION,
+        )
+        self.assertEqual(combined.model_version, P4_COMBINED_ADAPTER_MODEL_VERSION)
+        self.assertEqual(
+            p4_adapter_model_version({"method": "qlora-p4-seed-targeted-v2"}),
+            P4_COMBINED_ADAPTER_MODEL_VERSION,
+        )
     def test_valid_pilot_artifacts_require_method_hash_metrics_and_base_model(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
@@ -154,6 +166,53 @@ class P4AdapterArtifactTests(unittest.TestCase):
 
         self.assertEqual(manifest["method"], "qlora-p4-seed-pilot")
         self.assertEqual(manifest["dataset_sha256"], EXPECTED_P4_SHA256)
+
+    def test_valid_combined_artifacts_use_the_fixed_v2_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            model = Path(directory) / "model"
+            model.mkdir()
+            adapter = write_pilot_artifacts(output, model)
+            manifest_path = output / "training_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.update(
+                {
+                    "data_version": "p4-seed-targeted-v2",
+                    "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+                    "method": "qlora-p4-seed-targeted-v2",
+                    "num_train_epochs": 1.0,
+                    "train_count": 1200,
+                    "validation_count": 300,
+                }
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            validated = validate_p4_adapter_artifacts(adapter, model)
+
+        self.assertEqual(validated["method"], "qlora-p4-seed-targeted-v2")
+
+    def test_combined_artifacts_reject_epoch_identity_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            model = Path(directory) / "model"
+            model.mkdir()
+            adapter = write_pilot_artifacts(output, model)
+            manifest_path = output / "training_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.update(
+                {
+                    "data_version": "p4-seed-targeted-v2",
+                    "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+                    "method": "qlora-p4-seed-targeted-v2",
+                    "num_train_epochs": 2.0,
+                    "train_count": 1200,
+                    "validation_count": 300,
+                }
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(P4AdapterSmokeError, "num_train_epochs"):
+                validate_p4_adapter_artifacts(adapter, model)
 
     def test_wrong_method_hash_or_model_is_rejected(self):
         mutations = (

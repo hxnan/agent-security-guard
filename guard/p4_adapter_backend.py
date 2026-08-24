@@ -7,22 +7,29 @@ from pathlib import Path
 from .adapter_smoke import load_adapter_runtime
 from .baseline_output import parse_baseline_semantic_result
 from .contracts import GuardResult
-from .p4_adapter_smoke import P4AdapterSmokeError, validate_p4_adapter_artifacts
+from .p4_adapter_smoke import (
+    P4_ADAPTER_MODEL_VERSION,
+    P4_COMBINED_ADAPTER_MODEL_VERSION,
+    P4AdapterSmokeError,
+    p4_adapter_model_version,
+    validate_p4_adapter_artifacts,
+)
 from .training_config import resolve_training_model_path
 from .transformers_backend import TransformersQwenBackend
-
-
-P4_ADAPTER_MODEL_VERSION = "qwen2.5-1.5b-instruct-p4-seed-qlora-pilot-v1"
 
 
 class P4AdapterBackendError(RuntimeError):
     """Raised when the validated local P4 adapter runtime cannot be used."""
 
 
-def parse_p4_adapter_semantic_result(text: str) -> GuardResult:
+def parse_p4_adapter_semantic_result(
+    text: str,
+    *,
+    model_version: str = P4_ADAPTER_MODEL_VERSION,
+) -> GuardResult:
     """Parse the shared semantic contract with adapter-specific provenance."""
     result = parse_baseline_semantic_result(text)
-    return result.model_copy(update={"model_version": P4_ADAPTER_MODEL_VERSION})
+    return result.model_copy(update={"model_version": model_version})
 
 
 class P4AdapterQwenBackend(TransformersQwenBackend):
@@ -41,6 +48,7 @@ class P4AdapterQwenBackend(TransformersQwenBackend):
         super().__init__(tokenizer, model, torch_module, device)
         self.adapter_dir = adapter_dir
         self.manifest = manifest
+        self.model_version = p4_adapter_model_version(manifest)
 
     @classmethod
     def from_local_adapter(

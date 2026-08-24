@@ -18,16 +18,20 @@ from .qlora import ensure_output_directory, run_qlora_training
 from .training_config import (
     assert_training_ready,
     inspect_training_environment_for_files,
+    P4CombinedTrainingConfig,
     P4SeedTrainingConfig,
     resolve_training_model_path,
 )
 from .training_data import tokenize_training_record
 from training.data_quality import (
     DatasetQualityError,
+    load_eval_isolation_keys,
     load_eval_request_fingerprints,
     load_training_jsonl,
+    request_fingerprint,
 )
 from training.seed_dataset import SeedDatasetError, validate_seed_profile
+from training.targeted_dataset import TargetedDatasetError, validate_targeted_profile
 
 
 class P4QloraError(RuntimeError):
@@ -37,6 +41,14 @@ class P4QloraError(RuntimeError):
 EXPECTED_P4_SHA256 = {
     "train": "1897e89d11a730ad0922081bda0cf18da3b643a1fc887c2e27abaa7cc5e96208",
     "validation": "c4228d11dd08e8e0cf2a48b01398b5ee0be8a7270a572285e870e74eb939915e",
+}
+EXPECTED_P4_TARGETED_SHA256 = {
+    "train": "ed0220213c9ccc1966fd84d7f0b3ac216d6f984e9c72a1eddc4dacd3cc476d25",
+    "validation": "4f9f76a97946dda5db2693b22fb6ab33012f6d60bf014c6a4572b3294ab6824f",
+}
+EXPECTED_P4_COMBINED_SHA256 = {
+    "seed": EXPECTED_P4_SHA256,
+    "targeted": EXPECTED_P4_TARGETED_SHA256,
 }
 
 P4_QUANTIZATION_CONTRACT = {
@@ -67,7 +79,7 @@ class P4TrainingRecord:
 class P4DatasetBundle:
     train: tuple[P4TrainingRecord, ...]
     validation: tuple[P4TrainingRecord, ...]
-    sha256: dict[str, str]
+    sha256: dict[str, object]
     data_version: str
 
 
@@ -130,6 +142,78 @@ def load_p4_dataset_bundle(config: P4SeedTrainingConfig) -> P4DatasetBundle:
         validation=_normalized(validation),
         sha256=dict(actual_hashes),
         data_version="p4-seed-v1",
+    )
+
+
+def load_p4_combined_dataset_bundle(
+    config: P4CombinedTrainingConfig,
+) -> P4DatasetBundle:
+    seed = load_p4_dataset_bundle(config)
+    try:
+        manifest = json.loads(
+            config.targeted_manifest_path.read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise P4QloraError(f"cannot read P4 targeted manifest: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise P4QloraError("P4 targeted manifest must be a JSON object")
+    targeted_hashes = {
+        "train": _file_sha256(config.targeted_train_path),
+        "validation": _file_sha256(config.targeted_validation_path),
+    }
+    if targeted_hashes != EXPECTED_P4_TARGETED_SHA256:
+        raise P4QloraError(
+            "P4 targeted dataset SHA-256 mismatch: expected "
+            f"{EXPECTED_P4_TARGETED_SHA256}, got {targeted_hashes}"
+        )
+    if manifest.get("sha256") != EXPECTED_P4_TARGETED_SHA256:
+        raise P4QloraError(
+            "P4 targeted manifest SHA-256 does not match the frozen bundle"
+        )
+    if manifest.get("data_version") != "p4-targeted-v1":
+        raise P4QloraError("P4 targeted manifest has an unexpected data_version")
+    if manifest.get("evaluation_adaptive") is not True:
+        raise P4QloraError("P4 targeted manifest must disclose Eval adaptation")
+
+    try:
+        targeted_train = load_training_jsonl(
+            config.targeted_train_path, expected_split="train"
+        )
+        targeted_validation = load_training_jsonl(
+            config.targeted_validation_path, expected_split="validation"
+        )
+        seed_train = load_training_jsonl(config.train_path, expected_split="train")
+        seed_validation = load_training_jsonl(
+            config.validation_path, expected_split="validation"
+        )
+        seed_records = [*seed_train, *seed_validation]
+        eval_keys = load_eval_isolation_keys(config.eval_dir)
+        validate_targeted_profile(
+            targeted_train,
+            targeted_validation,
+            eval_keys.request_fingerprints,
+            seed_request_fingerprints={
+                request_fingerprint(record.input) for record in seed_records
+            },
+            seed_semantic_templates={
+                record.metadata.semantic_template for record in seed_records
+            },
+            eval_commands=eval_keys.commands,
+            eval_contexts=eval_keys.contexts,
+            eval_context_sources=eval_keys.context_sources,
+            eval_semantic_templates=eval_keys.semantic_templates,
+        )
+    except (DatasetQualityError, TargetedDatasetError) as exc:
+        raise P4QloraError(f"P4 targeted dataset validation failed: {exc}") from exc
+
+    return P4DatasetBundle(
+        train=(*seed.train, *_normalized(targeted_train)),
+        validation=(*seed.validation, *_normalized(targeted_validation)),
+        sha256={
+            "seed": dict(EXPECTED_P4_SHA256),
+            "targeted": dict(EXPECTED_P4_TARGETED_SHA256),
+        },
+        data_version="p4-seed-targeted-v2",
     )
 
 
@@ -246,7 +330,7 @@ def build_p4_training_arguments(transformers_module, config: P4SeedTrainingConfi
 
 
 def build_p4_training_manifest(
-    config: P4SeedTrainingConfig,
+    config: P4SeedTrainingConfig | P4CombinedTrainingConfig,
     bundle: P4DatasetBundle,
     *,
     resolved_model: Path,
@@ -269,7 +353,11 @@ def build_p4_training_manifest(
         },
         "lora_target": config.lora_target,
         "max_length": config.max_length,
-        "method": "qlora-p4-seed-pilot",
+        "method": (
+            "qlora-p4-seed-targeted-v2"
+            if bundle.data_version == "p4-seed-targeted-v2"
+            else "qlora-p4-seed-pilot"
+        ),
         "micro_batch_size": config.micro_batch_size,
         "num_train_epochs": config.num_train_epochs,
         "optimizer": "paged_adamw_8bit",
@@ -346,6 +434,49 @@ def preflight_p4_seed_training(config: P4SeedTrainingConfig) -> dict[str, object
     }
 
 
+def preflight_p4_combined_training(
+    config: P4CombinedTrainingConfig,
+) -> dict[str, object]:
+    bundle = load_p4_combined_dataset_bundle(config)
+    return _preflight_p4_training(
+        config,
+        bundle,
+        {
+            "seed_manifest": config.manifest_path,
+            "seed_train": config.train_path,
+            "seed_validation": config.validation_path,
+            "targeted_manifest": config.targeted_manifest_path,
+            "targeted_train": config.targeted_train_path,
+            "targeted_validation": config.targeted_validation_path,
+        },
+    )
+
+
+def _preflight_p4_training(config, bundle, data_files) -> dict[str, object]:
+    resolved_model = resolve_training_model_path(config.model_path)
+    environment = inspect_training_environment_for_files(resolved_model, data_files)
+    tokenization = {"ready": False, "status": "not_checked"}
+    if environment["ready"]:
+        tokenization = audit_p4_token_lengths(
+            bundle,
+            load_p4_tokenizer(resolved_model),
+            config.max_length,
+        )
+        tokenization["status"] = "ready" if tokenization["ready"] else "overlength"
+    ready = environment["ready"] and tokenization["ready"]
+    return {
+        "dataset": {
+            "data_version": bundle.data_version,
+            "sha256": dict(bundle.sha256),
+            "train_count": len(bundle.train),
+            "validation_count": len(bundle.validation),
+        },
+        "environment": environment,
+        "status": "ready" if ready else "not_ready",
+        "tokenization": tokenization,
+    }
+
+
 def train_p4_seed(config: P4SeedTrainingConfig) -> dict[str, object]:
     bundle = load_p4_dataset_bundle(config)
     resolved_model = resolve_training_model_path(config.model_path)
@@ -377,6 +508,47 @@ def train_p4_seed(config: P4SeedTrainingConfig) -> dict[str, object]:
         metrics_validator=validate_finite_training_metrics,
         oom_retry_command=(
             "python scripts/train_p4_seed_qlora.py "
+            "--lora-target attention --overwrite-output"
+        ),
+        record_tokenizer=tokenize_p4_training_record,
+        tokenizer=tokenizer,
+    )
+
+
+def train_p4_combined(config: P4CombinedTrainingConfig) -> dict[str, object]:
+    bundle = load_p4_combined_dataset_bundle(config)
+    resolved_model = resolve_training_model_path(config.model_path)
+    environment = inspect_training_environment_for_files(
+        resolved_model,
+        {
+            "seed_manifest": config.manifest_path,
+            "seed_train": config.train_path,
+            "seed_validation": config.validation_path,
+            "targeted_manifest": config.targeted_manifest_path,
+            "targeted_train": config.targeted_train_path,
+            "targeted_validation": config.targeted_validation_path,
+        },
+    )
+    assert_training_ready(environment)
+    tokenizer = load_p4_tokenizer(resolved_model)
+    token_audit = audit_p4_token_lengths(bundle, tokenizer, config.max_length)
+    assert_p4_token_lengths(token_audit)
+    ensure_output_directory(config)
+    return run_qlora_training(
+        config,
+        resolved_model,
+        bundle.train,
+        bundle.validation,
+        build_p4_training_arguments,
+        lambda trainable_parameters: build_p4_training_manifest(
+            config,
+            bundle,
+            resolved_model=resolved_model,
+            trainable_parameters=trainable_parameters,
+        ),
+        metrics_validator=validate_finite_training_metrics,
+        oom_retry_command=(
+            "python scripts/train_p4_combined_qlora.py "
             "--lora-target attention --overwrite-output"
         ),
         record_tokenizer=tokenize_p4_training_record,

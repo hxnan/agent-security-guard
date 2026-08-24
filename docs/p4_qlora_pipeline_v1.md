@@ -119,6 +119,28 @@ strict-valid held-out smoke result with matching category. These engineering
 results authorize formal evaluation but do not satisfy the P5 quality gate by
 themselves.
 
+## Combined Seed + Targeted V2 run
+
+The next fixed run combines the committed Seed V1 and Targeted V1 objects in
+memory: 1,200 train and 300 validation records. It rechecks both manifests and
+hashes, Seed overlap, and independent frozen Eval request, command, context,
+source, and semantic-template isolation before loading the model.
+
+```bash
+python scripts/train_p4_combined_qlora.py --preflight-only
+python scripts/train_p4_combined_qlora.py --overwrite-output
+python scripts/smoke_test_p4_adapter.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --report artifacts/p4-seed-targeted-qlora-v2/adapter_smoke_report.json
+python scripts/evaluate_p4_adapter.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --output artifacts/p4-seed-targeted-eval-v2/report.json
+```
+
+The combined run uses one epoch and the same 6 GB NF4/BF16 memory contract.
+Eval V1 is development-adaptive for this run; only an untouched Eval V2 can
+support a final generalization claim.
+
 The first formal adapter Eval V1 run achieved 0.99 valid-output rate, 0.06
 repair-attempt rate, 0.894 risk F1, 0.635 category macro F1, and 0.72 effective
 decision accuracy. One high-risk request was still allowed, so the zero-miss
