@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from guard.p4_adapter_backend import (
     P4_ADAPTER_MODEL_VERSION,
+    P4_COMBINED_ADAPTER_MODEL_VERSION,
     P4AdapterBackendError,
     P4AdapterQwenBackend,
     parse_p4_adapter_semantic_result,
@@ -98,6 +99,13 @@ class P4AdapterBackendTests(unittest.TestCase):
 
         self.assertEqual(result.model_version, P4_ADAPTER_MODEL_VERSION)
 
+        combined = parse_p4_adapter_semantic_result(
+            '{"decision":"allow","severity":"none","category":"benign",'
+            '"summary":"查看仓库状态","confidence":0.99,"evidence":[]}',
+            model_version=P4_COMBINED_ADAPTER_MODEL_VERSION,
+        )
+        self.assertEqual(combined.model_version, P4_COMBINED_ADAPTER_MODEL_VERSION)
+
     def test_validated_adapter_runtime_generates_through_shared_backend_contract(self):
         tokenizer = FakeTokenizer()
         model = FakeModel()
@@ -132,6 +140,18 @@ class P4AdapterBackendTests(unittest.TestCase):
         self.assertEqual(generated.peak_gpu_memory_mb, 256.0)
         self.assertEqual(backend.manifest, manifest)
         self.assertEqual(backend.adapter_dir, root / "adapter")
+
+    def test_backend_selects_combined_model_provenance_from_manifest(self):
+        backend = P4AdapterQwenBackend(
+            FakeTokenizer(),
+            FakeModel(),
+            FakeTorch,
+            "cuda:0",
+            adapter_dir=Path("combined/adapter"),
+            manifest={"method": "qlora-p4-seed-targeted-v2"},
+        )
+
+        self.assertEqual(backend.model_version, P4_COMBINED_ADAPTER_MODEL_VERSION)
 
     def test_missing_adapter_is_rejected_before_runtime_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:

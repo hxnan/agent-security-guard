@@ -15,6 +15,7 @@ from .adapter_smoke import (
 from .baseline_output import parse_baseline_semantic_result
 from .baseline_prompt import BASELINE_PROMPT_VERSION
 from .p4_qlora import (
+    EXPECTED_P4_COMBINED_SHA256,
     EXPECTED_P4_SHA256,
     P4_CHECKPOINT_POLICY,
     P4_QUANTIZATION_CONTRACT,
@@ -30,6 +31,18 @@ from .training_config import P4SeedTrainingConfig, resolve_training_model_path
 
 class P4AdapterSmokeError(RuntimeError):
     """Raised when P4 pilot adapter artifacts fail their fixed contract."""
+
+
+P4_ADAPTER_MODEL_VERSION = "qwen2.5-1.5b-instruct-p4-seed-qlora-pilot-v1"
+P4_COMBINED_ADAPTER_MODEL_VERSION = (
+    "qwen2.5-1.5b-instruct-p4-seed-targeted-qlora-v2"
+)
+
+
+def p4_adapter_model_version(manifest: dict[str, object]) -> str:
+    if manifest.get("method") == "qlora-p4-seed-targeted-v2":
+        return P4_COMBINED_ADAPTER_MODEL_VERSION
+    return P4_ADAPTER_MODEL_VERSION
 
 
 def _validate_adapter_config(
@@ -110,7 +123,10 @@ def _validate_adapter_config(
             )
 
 
-def _validate_training_manifest_contract(manifest: dict[str, object]) -> None:
+def _validate_training_manifest_contract(
+    manifest: dict[str, object], *, train_count: int, validation_count: int,
+    num_train_epochs: float | None = None,
+) -> None:
     fixed = {
         "checkpoint_policy": P4_CHECKPOINT_POLICY,
         "gradient_accumulation_steps": 16,
@@ -121,10 +137,12 @@ def _validate_training_manifest_contract(manifest: dict[str, object]) -> None:
         "precision": {"bf16": True, "fp16": False},
         "quantization": P4_QUANTIZATION_CONTRACT,
         "seed": 42,
-        "train_count": 800,
-        "validation_count": 200,
+        "train_count": train_count,
+        "validation_count": validation_count,
         "warmup_ratio": 0.03,
     }
+    if num_train_epochs is not None:
+        fixed["num_train_epochs"] = num_train_epochs
     for field, expected in fixed.items():
         if manifest.get(field) != expected:
             raise P4AdapterSmokeError(
@@ -218,11 +236,30 @@ def validate_p4_adapter_artifacts(
         adapter_config = json.loads(config_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError, UnicodeError) as exc:
         raise P4AdapterSmokeError(f"P4 adapter artifact JSON is invalid: {exc}") from exc
-    if not isinstance(manifest, dict) or manifest.get("method") != "qlora-p4-seed-pilot":
+    if not isinstance(manifest, dict):
+        raise P4AdapterSmokeError("training_manifest.json must be a JSON object")
+    contracts = {
+        "qlora-p4-seed-pilot": {
+            "data_version": "p4-seed-v1",
+            "dataset_sha256": EXPECTED_P4_SHA256,
+            "train_count": 800,
+            "validation_count": 200,
+            "num_train_epochs": None,
+        },
+        "qlora-p4-seed-targeted-v2": {
+            "data_version": "p4-seed-targeted-v2",
+            "dataset_sha256": EXPECTED_P4_COMBINED_SHA256,
+            "train_count": 1200,
+            "validation_count": 300,
+            "num_train_epochs": 1.0,
+        },
+    }
+    contract = contracts.get(manifest.get("method"))
+    if contract is None:
         raise P4AdapterSmokeError("training_manifest.json has an unexpected method")
-    if manifest.get("data_version") != "p4-seed-v1":
+    if manifest.get("data_version") != contract["data_version"]:
         raise P4AdapterSmokeError("training_manifest.json has an unexpected data_version")
-    if manifest.get("dataset_sha256") != EXPECTED_P4_SHA256:
+    if manifest.get("dataset_sha256") != contract["dataset_sha256"]:
         raise P4AdapterSmokeError("training_manifest.json has an unexpected dataset SHA-256")
     if manifest.get("training_prompt_version") != BASELINE_PROMPT_VERSION:
         raise P4AdapterSmokeError(
@@ -236,7 +273,12 @@ def validate_p4_adapter_artifacts(
         raise P4AdapterSmokeError(
             "training_manifest.json must mark the pilot quality_milestone=false"
         )
-    _validate_training_manifest_contract(manifest)
+    _validate_training_manifest_contract(
+        manifest,
+        train_count=contract["train_count"],
+        validation_count=contract["validation_count"],
+        num_train_epochs=contract["num_train_epochs"],
+    )
     _validate_adapter_config(adapter_config, manifest, expected_model)
     _validate_adapter_hashes(adapter_dir, manifest)
     if not isinstance(metrics, dict):
@@ -256,11 +298,18 @@ def validate_p4_adapter_artifacts(
     return manifest
 
 
-def validate_p4_generated_result(text: str):
+def validate_p4_generated_result(
+    text: str,
+    *,
+    model_version: str | None = None,
+):
     try:
-        return parse_baseline_semantic_result(text)
+        result = parse_baseline_semantic_result(text)
     except GeneratedResultError as exc:
         raise P4AdapterSmokeError(str(exc)) from exc
+    if model_version is not None:
+        result = result.model_copy(update={"model_version": model_version})
+    return result
 
 
 def smoke_test_p4_adapter(
@@ -272,7 +321,7 @@ def smoke_test_p4_adapter(
     if max_new_tokens < 1:
         raise P4AdapterSmokeError("max_new_tokens must be positive")
     resolved_model = resolve_training_model_path(config.model_path)
-    validate_p4_adapter_artifacts(adapter_dir, resolved_model)
+    manifest = validate_p4_adapter_artifacts(adapter_dir, resolved_model)
     bundle = load_p4_dataset_bundle(config)
     if not bundle.validation:
         raise P4AdapterSmokeError("P4 validation split is empty")
@@ -322,7 +371,10 @@ def smoke_test_p4_adapter(
         "valid": False,
     }
     try:
-        result = validate_p4_generated_result(raw_text)
+        result = validate_p4_generated_result(
+            raw_text,
+            model_version=p4_adapter_model_version(manifest),
+        )
         report["actual_category"] = result.category.value
         report["category_match"] = result.category is record.result.category
         report["result"] = result.model_dump(mode="json")

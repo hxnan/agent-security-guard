@@ -265,6 +265,23 @@ python scripts/analyze_p4_adapter_report.py
 
 已在 RTX 1000 Ada 6GB 上完成首轮 pilot：全量 token 审计最大长度 528；训练峰值显存 3091.95 MB；epoch 1/2 validation loss 分别为 0.3191/0.4113，best checkpoint 正确回落到 epoch 1；held-out smoke 为 strict-valid 且 category match。正式 adapter Eval V1 取得 `valid_output_rate=0.99`、`repair_attempt_rate=0.06`、`risk_f1=0.894`、`category_macro_f1=0.635` 和 `effective_decision_accuracy=0.72`，但仍有 1 个 high-risk allow miss，因此安全门禁未通过，不能进入 P5。报告写入 `artifacts/p4-adapter-eval-v1/report.json`；CPU-only analyzer 会验证 adapter/freeze provenance，并输出安全漏放、无效输出、benign false positive、类别混淆和定向扩数样本 ID。
 
+## P4 Seed + Targeted QLoRA V2
+
+第二轮训练在内存中确定性组合 Seed V1 与 Targeted V1，不生成新的拼接数据文件。固定规模为 1,200 train / 300 validation，两个来源的 manifest、SHA-256、Seed 重合门禁及独立 Eval 命令/上下文/模板隔离都会在模型加载前复验。
+
+```bash
+python scripts/train_p4_combined_qlora.py --preflight-only
+python scripts/train_p4_combined_qlora.py --overwrite-output
+python scripts/smoke_test_p4_adapter.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --report artifacts/p4-seed-targeted-qlora-v2/adapter_smoke_report.json
+python scripts/evaluate_p4_adapter.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --output artifacts/p4-seed-targeted-eval-v2/report.json
+```
+
+6GB 默认值保持 NF4/BF16、micro batch 1、gradient accumulation 16、`max_length=576` 和 learning rate `1e-4`，组合训练使用 1 epoch。输出 manifest 使用 `p4-seed-targeted-v2` / `qlora-p4-seed-targeted-v2`，adapter 校验与评估报告会记录组合模型版本。由于 Targeted V1 来自 Eval V1 诊断，该评估仅是开发回归；最终泛化仍须 untouched Eval V2。
+
 ## 最小 QLoRA 工程闭环
 
 仓库另有独立 smoke 闭环，仅用于证明 6GB GPU 上 4-bit NF4 QLoRA、Adapter 保存/重载可工作，不代表正式 P5 模型质量。

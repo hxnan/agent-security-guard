@@ -169,7 +169,9 @@ def main(argv: list[str] | None = None) -> int:
     predictor = BaselinePredictor(
         backend,
         max_new_tokens=args.max_new_tokens,
-        result_parser=parse_p4_adapter_semantic_result,
+        result_parser=lambda text: parse_p4_adapter_semantic_result(
+            text, model_version=backend.model_version
+        ),
     )
     try:
         report = evaluate_baseline(
@@ -183,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         return _error("evaluation", f"evaluation failed: {exc}", 1)
 
     report["report_version"] = P4_ADAPTER_EVAL_REPORT_VERSION
-    report["model_version"] = P4_ADAPTER_MODEL_VERSION
+    report["model_version"] = backend.model_version
     report["adapter_provenance"] = _adapter_provenance(
         backend.adapter_dir,
         backend.manifest,

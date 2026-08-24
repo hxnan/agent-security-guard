@@ -32,6 +32,18 @@ DEFAULT_P4_MANIFEST_PATH = (
 )
 DEFAULT_P4_EVAL_DIR = REPOSITORY_ROOT / "data" / "eval-v1" / "gold"
 DEFAULT_P4_OUTPUT_DIR = REPOSITORY_ROOT / "artifacts" / "p4-seed-qlora-pilot-v1"
+DEFAULT_P4_TARGETED_TRAIN_PATH = (
+    REPOSITORY_ROOT / "data" / "train" / "agent_security_targeted_train_v1.jsonl"
+)
+DEFAULT_P4_TARGETED_VALIDATION_PATH = (
+    REPOSITORY_ROOT / "data" / "val" / "agent_security_targeted_validation_v1.jsonl"
+)
+DEFAULT_P4_TARGETED_MANIFEST_PATH = (
+    REPOSITORY_ROOT / "data" / "train" / "agent_security_targeted_v1_manifest.json"
+)
+DEFAULT_P4_COMBINED_OUTPUT_DIR = (
+    REPOSITORY_ROOT / "artifacts" / "p4-seed-targeted-qlora-v2"
+)
 DEFAULT_P4_MAX_LENGTH = 576
 MINIMUM_GPU_MEMORY_BYTES = int(5.5 * 1024**3)
 MINIMUM_FREE_GPU_MEMORY_BYTES = int(4.75 * 1024**3)
@@ -100,6 +112,22 @@ class P4SeedTrainingConfig:
 
     def __post_init__(self) -> None:
         _validate_training_values(self)
+
+
+@dataclass(frozen=True)
+class P4CombinedTrainingConfig(P4SeedTrainingConfig):
+    targeted_train_path: Path = DEFAULT_P4_TARGETED_TRAIN_PATH
+    targeted_validation_path: Path = DEFAULT_P4_TARGETED_VALIDATION_PATH
+    targeted_manifest_path: Path = DEFAULT_P4_TARGETED_MANIFEST_PATH
+    output_dir: Path = DEFAULT_P4_COMBINED_OUTPUT_DIR
+    num_train_epochs: float = 1.0
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.num_train_epochs != 1.0:
+            raise TrainingConfigError(
+                "num_train_epochs must be exactly 1.0 for P4 combined V2"
+            )
 
 
 def resolve_training_model_path(

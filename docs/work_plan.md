@@ -217,7 +217,8 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] P4 Targeted Batch V1：50 个独立语义簇 × 10 变体，400/100 按簇隔离。
 - [x] Targeted V1 与 Seed V1 请求/template 双重隔离，冻结 Eval V1 精确请求零泄漏，5 个批次及 SHA-256 可重建。
 - [x] Targeted manifest 明确 `evaluation_adaptive=true`；Eval V1 降级为开发回归集，P5 泛化验收需要新 Eval V2。
-- [ ] Seed V1 + Targeted V1 组合为 1,200/300 数据并完成第二轮 QLoRA pilot。
+- [x] Seed V1 + Targeted V1 的 1,200/300 固定组合训练入口、双 manifest/hash 与隔离 preflight。
+- [ ] 在 6GB GPU 完成第二轮 QLoRA pilot、smoke 与 Eval V1 开发回归。
 - [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
 P4 生成与校验：
@@ -241,6 +242,14 @@ python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
 python scripts/evaluate_p4_adapter.py
 python scripts/analyze_p4_adapter_report.py
+python scripts/train_p4_combined_qlora.py --preflight-only
+python scripts/train_p4_combined_qlora.py --overwrite-output
+python scripts/smoke_test_p4_adapter.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --report artifacts/p4-seed-targeted-qlora-v2/adapter_smoke_report.json
+python scripts/evaluate_p4_adapter.py \
+  --adapter-dir artifacts/p4-seed-targeted-qlora-v2/adapter \
+  --output artifacts/p4-seed-targeted-eval-v2/report.json
 ```
 
 Pilot 不是质量里程碑。当前格式、repair rate 和整体 F1 已明显改善，但
