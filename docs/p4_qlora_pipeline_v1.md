@@ -74,6 +74,7 @@ Eval request leakage checks, and SHA-256 comparison against the manifest.
 python scripts/train_p4_seed_qlora.py --preflight-only
 python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
+python scripts/evaluate_p4_adapter.py
 ```
 
 The fixed 6GB defaults are maximum length 576, micro batch 1, gradient
@@ -101,6 +102,21 @@ smoke probe rejects substituted files, unexpected PEFT behavior switches, or
 provenance drift before loading the model. It must remain
 `quality_milestone=false`; no pilot adapter is a P5 release candidate until
 frozen Eval V1 comparison is complete.
+
+The formal adapter evaluator validates the same manifest, base-model binding,
+and every adapter/tokenizer SHA-256 before loading CUDA. It then runs all 100
+frozen Eval V1 records through the unchanged Baseline V2.1 prompt, strict
+six-field parser, system envelope, and at most one repair. The complete report
+uses `p4-adapter-eval-report-v1`, adapter-specific model provenance, and the
+same compliance, risk, category, decision, safety, latency, throughput, and GPU
+memory metrics as the model-only baseline. It writes only ignored local output
+under `artifacts/p4-adapter-eval-v1/`.
+
+The first local 6GB pilot completed with maximum observed input length 528,
+peak training memory 3091.95 MB, best validation loss 0.3191 at epoch 1, and a
+strict-valid held-out smoke result with matching category. These engineering
+results authorize formal evaluation but do not satisfy the P5 quality gate by
+themselves.
 
 Expected dependency, local-model, runtime, and CUDA OOM failures return one
 concise JSON result without a traceback. The OOM result retains the audited

@@ -6,6 +6,7 @@ from guard.baseline_predictor import (
     GenerationResult,
     PredictionStatus,
 )
+from guard.baseline_output import parse_baseline_semantic_result
 from guard.baseline_prompt import (
     BASELINE_MODEL_VERSION,
     BASELINE_POLICY_VERSION,
@@ -61,6 +62,28 @@ def request(command="git status --short"):
 
 
 class BaselinePredictorTests(unittest.TestCase):
+    def test_injected_result_parser_controls_prediction_provenance(self):
+        backend = SequenceBackend([generation(valid_text())])
+
+        def parse_adapter_result(text):
+            result = parse_baseline_semantic_result(text)
+            return result.model_copy(
+                update={
+                    "model_version": "qwen2.5-1.5b-instruct-p4-seed-qlora-pilot-v1"
+                }
+            )
+
+        outcome = BaselinePredictor(
+            backend,
+            result_parser=parse_adapter_result,
+        ).predict(request())
+
+        self.assertEqual(outcome.status, PredictionStatus.OK)
+        self.assertEqual(
+            outcome.result.model_version,
+            "qwen2.5-1.5b-instruct-p4-seed-qlora-pilot-v1",
+        )
+
     def test_valid_first_pass_returns_enveloped_result_without_repair(self):
         first = "prefix " + valid_text(confidence="0.95") + " suffix"
         backend = SequenceBackend([

@@ -209,7 +209,8 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] pilot 训练/探测与 Baseline V2.1 六字段 semantic contract 对齐。
 - [x] 每 epoch validation、best eval-loss checkpoint、adapter-only manifest。
 - [x] held-out validation adapter smoke probe。
-- [ ] 目标 6GB GPU 完成 pilot 训练和 smoke 本地门禁。
+- [x] 目标 6GB GPU 完成 pilot 训练和 smoke 本地门禁：峰值显存 3091.95 MB，best eval loss 0.3191，held-out strict-valid/category-match。
+- [x] adapter-backed Eval V1 CLI、artifact provenance 与 CPU-testable runtime boundary。
 - [ ] pilot adapter 在冻结 Eval V1 上对比 Baseline/Fusion。
 - [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
@@ -228,6 +229,7 @@ Pilot 本地门禁：
 python scripts/train_p4_seed_qlora.py --preflight-only
 python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
+python scripts/evaluate_p4_adapter.py
 ```
 
 Pilot 不是质量里程碑。先取得 validation loss、adapter strict-output probe
