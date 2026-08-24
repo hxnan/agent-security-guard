@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from training.data_quality import (
     DatasetQualityError,
+    canonical_context,
+    load_eval_isolation_keys,
     load_eval_request_fingerprints,
     load_training_jsonl,
     request_fingerprint,
@@ -94,6 +96,22 @@ class TrainingExampleContractTests(unittest.TestCase):
                 value["metadata"][field] = invalid
                 with self.assertRaises(ValidationError):
                     TrainingExample.model_validate(value)
+
+    def test_accepts_targeted_v1_batch_and_generator_provenance(self):
+        value = row(sample_id="TR-001001")
+        value["metadata"].update(
+            {
+                "data_version": "p4-targeted-v1",
+                "generation_source": "curated_targeted_catalog_v1",
+                "batch_id": "p4-targeted-v1-batch-001",
+                "generator_version": "p4-targeted-generator-v1",
+            }
+        )
+
+        example = TrainingExample.model_validate(value)
+
+        self.assertEqual(example.metadata.data_version, "p4-targeted-v1")
+        self.assertEqual(example.metadata.batch_id, "p4-targeted-v1-batch-001")
 
     def test_rejects_benign_risk_contradiction(self):
         value = row()
@@ -216,6 +234,27 @@ class TrainingJsonlLoaderTests(unittest.TestCase):
 
             with self.assertRaisesRegex(DatasetQualityError, "cannot read Eval shard"):
                 load_eval_request_fingerprints(directory)
+
+    def test_eval_isolation_loader_indexes_request_components(self):
+        with tempfile.TemporaryDirectory() as directory:
+            request = row()["input"]
+            payload = {
+                "sample_id": "EV001",
+                "request": request,
+                "metadata": {"semantic_template": "repo_status_read_only"},
+            }
+            (Path(directory) / "part.jsonl").write_text(
+                json.dumps(payload) + "\n", encoding="utf-8"
+            )
+
+            keys = load_eval_isolation_keys(directory)
+
+            self.assertEqual(keys.request_fingerprints, {request_fingerprint(request)})
+            self.assertEqual(keys.tool_commands, {("shell", "git status --short")})
+            self.assertEqual(keys.commands, {"git status --short"})
+            self.assertEqual(keys.contexts, {canonical_context(request["context"])})
+            self.assertEqual(keys.context_sources, set())
+            self.assertEqual(keys.semantic_templates, {"repo_status_read_only"})
 
 
 class TrainingBundleQualityTests(unittest.TestCase):

@@ -214,6 +214,10 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] pilot adapter 在冻结 Eval V1 上完成 Baseline/Fusion 公平对比：valid output 0.99、repair attempt 0.06、risk F1 0.894、category macro F1 0.635、effective decision accuracy 0.72。
 - [ ] 安全门禁：当前仍有 1 个 high-risk allow miss；必须先归因并通过定向扩数复评归零。
 - [x] CPU-only adapter 报告诊断器：校验 provenance 并输出安全、格式、benign FP、decision 与 category 错误簇样本 ID。
+- [x] P4 Targeted Batch V1：50 个独立语义簇 × 10 变体，400/100 按簇隔离。
+- [x] Targeted V1 与 Seed V1 请求/template 双重隔离，冻结 Eval V1 精确请求零泄漏，5 个批次及 SHA-256 可重建。
+- [x] Targeted manifest 明确 `evaluation_adaptive=true`；Eval V1 降级为开发回归集，P5 泛化验收需要新 Eval V2。
+- [ ] Seed V1 + Targeted V1 组合为 1,200/300 数据并完成第二轮 QLoRA pilot。
 - [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
 P4 生成与校验：
@@ -223,6 +227,10 @@ python scripts/prepare_training_data.py --force
 python scripts/check_training_dataset.py \
   --train data/train/agent_security_train_v1.jsonl \
   --validation data/val/agent_security_validation_v1.jsonl
+python scripts/prepare_targeted_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_targeted_train_v1.jsonl \
+  --validation data/val/agent_security_targeted_validation_v1.jsonl
 ```
 
 Pilot 本地门禁：
@@ -236,6 +244,7 @@ python scripts/analyze_p4_adapter_report.py
 ```
 
 Pilot 不是质量里程碑。当前格式、repair rate 和整体 F1 已明显改善，但
-high-risk allow miss 尚未归零；下一批数据必须由诊断器报告的真实错误簇驱动。
+high-risk allow miss 尚未归零；Targeted V1 已按真实错误簇构建，下一步是
+组合训练与复评。由于该数据使用了 Eval V1 错误反馈，最终结论必须转向 Eval V2。
 
 后续进入 API/SDK、审计、压测和持续红队回归。

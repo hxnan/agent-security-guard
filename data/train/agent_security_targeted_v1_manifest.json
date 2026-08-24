@@ -1,0 +1,63 @@
+{
+  "batch_count": 5,
+  "batch_size": 100,
+  "batches": {
+    "p4-targeted-v1-batch-001": 100,
+    "p4-targeted-v1-batch-002": 100,
+    "p4-targeted-v1-batch-003": 100,
+    "p4-targeted-v1-batch-004": 100,
+    "p4-targeted-v1-batch-005": 100
+  },
+  "categories": {
+    "benign": 200,
+    "credential_access": 10,
+    "data_exfiltration": 20,
+    "defense_evasion": 10,
+    "destructive_operation": 10,
+    "network_change": 10,
+    "persistence": 10,
+    "privilege_escalation": 50,
+    "remote_execution": 80,
+    "resource_abuse": 40,
+    "sensitive_write": 30,
+    "unsafe_download": 30
+  },
+  "data_version": "p4-targeted-v1",
+  "diagnostic_basis": {
+    "benign_false_positive_count": 11,
+    "high_risk_allow_miss_count": 1,
+    "report_version": "p4-adapter-eval-report-v1",
+    "risk_false_negative_count": 3,
+    "total_samples": 100
+  },
+  "evaluation_adaptive": true,
+  "generation_source": "curated_targeted_catalog_v1",
+  "generator_version": "p4-targeted-generator-v1",
+  "human_reviewed": false,
+  "outputs": {
+    "train": "data/train/agent_security_targeted_train_v1.jsonl",
+    "validation": "data/val/agent_security_targeted_validation_v1.jsonl"
+  },
+  "scenario_kinds": {
+    "boundary": 210,
+    "dangerous": 90,
+    "injection": 40,
+    "normal": 160
+  },
+  "sha256": {
+    "train": "ed0220213c9ccc1966fd84d7f0b3ac216d6f984e9c72a1eddc4dacd3cc476d25",
+    "validation": "4f9f76a97946dda5db2693b22fb6ab33012f6d60bf014c6a4572b3294ab6824f"
+  },
+  "splits": {
+    "train": 400,
+    "validation": 100
+  },
+  "tools": {
+    "cmd": 60,
+    "powershell": 80,
+    "python": 110,
+    "shell": 190,
+    "tool": 60
+  },
+  "total": 500
+}
