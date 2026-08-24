@@ -2,7 +2,7 @@
 
 面向 Agent 工具执行环节的本地轻量级安全护栏。在 Shell、PowerShell、CMD、Python 或其他工具调用真正执行前，对请求做静态风险分析并输出 `allow / review / block`。**项目不会执行待检测命令。**
 
-当前工程阶段是 **P4 Seed QLoRA Pilot**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1 的目标 GPU 评估；P4 Seed Dataset V1 已形成首批 1,000 条可复现训练/验证数据，并已具备正式数据 pilot 训练入口。
+当前工程阶段是 **P4 Pilot Adapter 评估**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1 的目标 GPU 评估；P4 Seed Dataset V1 已完成首轮 6GB QLoRA pilot 训练与 smoke，正在进入同一冻结 Eval V1 的公平对比。
 
 > Eval V1 是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。`data/eval-v1/freeze-manifest.json` 明确记录 `human_reviewed=false`。
 
@@ -19,6 +19,7 @@
 - matcher 异常不会产生隐式 allow：异常会被记录；benign shortcut 被抑制，无危险规则可决定时 fail-safe `review`。
 - P4 Seed V1：100 个独立语义簇、1,000 条记录、800/200 train/validation 隔离、10 个可追溯批次。
 - P4 QLoRA Pilot：固定数据哈希预检、6GB GPU 配置、每 epoch 验证、best eval-loss checkpoint、adapter-only provenance 与 held-out smoke probe。
+- P4 Adapter Evaluator：严格校验 pilot manifest/hash 后复用 Baseline V2.1 prompt、一次 repair 和完整 Eval V1 指标。
 
 ## 快速开始
 
@@ -240,11 +241,14 @@ python scripts/check_training_dataset.py \
 python scripts/train_p4_seed_qlora.py --preflight-only
 python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
+python scripts/evaluate_p4_adapter.py
 ```
 
 固定默认值：4-bit NF4 + double quant + BF16、LoRA `r=8/alpha=16`、`max_length=576`、micro batch 1、gradient accumulation 16、2 epochs、learning rate `1e-4`。训练标签严格使用 Baseline/Fusion V2.1 的六字段 semantic contract，system-owned fields 不进入模型目标。preflight 和正式训练都会用本地 tokenizer 全量审计 1,000 条记录并报告实际最大长度；训练不会截断超长记录，正式数据、manifest、哈希或 token 长度漂移都会在模型加载前失败。
 
 本地输出位于 `artifacts/p4-seed-qlora-pilot-v1/`，不会提交到 Git。`training_manifest.json` 固定记录数据哈希、Prompt 版本、模型路径、完整有效超参数及 adapter 目录全部推理资产（含 tokenizer）的 SHA-256，并保持 `quality_milestone=false`。训练会程序化保留至多一个 best checkpoint；训练和 smoke 的预期运行失败（包括 CUDA OOM）只输出一条 JSON，OOM 会给出缩减重试参数。pilot 完成后将用 adapter-backed Eval V1 判断需要补强的类别与 hard cases。
+
+已在 RTX 1000 Ada 6GB 上完成首轮 pilot：全量 token 审计最大长度 528；训练峰值显存 3091.95 MB；epoch 1/2 validation loss 分别为 0.3191/0.4113，best checkpoint 正确回落到 epoch 1；held-out smoke 为 strict-valid 且 category match。正式 adapter Eval 报告写入 `artifacts/p4-adapter-eval-v1/report.json`，其中每条结果使用 adapter 专属 `model_version`，并保留训练数据、adapter 文件哈希和冻结集 provenance。
 
 ## 最小 QLoRA 工程闭环
 
@@ -271,6 +275,6 @@ python scripts/smoke_test_adapter.py
 
 ## 近期路线
 
-1. 在 6GB GPU 上运行 P4 Seed QLoRA Pilot 与 held-out adapter smoke。
-2. 用冻结 Eval V1 对 pilot adapter 做公平评估并分析错误簇。
-3. 根据真实错误定向扩展为 5,000–10,000 条版本化语料，再进入 P5 正式 QLoRA/SFT。
+1. 用冻结 Eval V1 对 pilot adapter 做公平评估并分析错误簇。
+2. 根据真实错误定向扩展为 5,000–10,000 条版本化语料。
+3. 只在定向数据门禁通过后进入 P5 正式 QLoRA/SFT。

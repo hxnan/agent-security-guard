@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
 from pydantic import BaseModel
 
@@ -66,11 +66,18 @@ def _max_peak_memory(*values: float | None) -> float | None:
 class BaselinePredictor:
     """Format, generate, validate and fail safely for one GuardRequest."""
 
-    def __init__(self, backend: GenerationBackend, max_new_tokens: int = 256):
+    def __init__(
+        self,
+        backend: GenerationBackend,
+        max_new_tokens: int = 256,
+        *,
+        result_parser: Callable[[str], GuardResult] = parse_baseline_semantic_result,
+    ):
         if max_new_tokens < 1:
             raise ValueError("max_new_tokens must be positive")
         self.backend = backend
         self.max_new_tokens = max_new_tokens
+        self.result_parser = result_parser
 
     def predict(self, request: GuardRequest) -> BaselinePredictionOutcome:
         messages = format_baseline_messages(request)
@@ -84,7 +91,7 @@ class BaselinePredictor:
             )
 
         try:
-            result = parse_baseline_semantic_result(initial.raw_text)
+            result = self.result_parser(initial.raw_text)
         except GeneratedResultError as initial_exc:
             initial_error = str(initial_exc)
         else:
@@ -129,7 +136,7 @@ class BaselinePredictor:
         )
 
         try:
-            result = parse_baseline_semantic_result(repair.raw_text)
+            result = self.result_parser(repair.raw_text)
         except GeneratedResultError as repair_exc:
             repair_error = str(repair_exc)
             return BaselinePredictionOutcome(
