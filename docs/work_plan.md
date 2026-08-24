@@ -211,7 +211,9 @@ peak_gpu_memory_mb            = 3043.16162109375
 - [x] held-out validation adapter smoke probe。
 - [x] 目标 6GB GPU 完成 pilot 训练和 smoke 本地门禁：峰值显存 3091.95 MB，best eval loss 0.3191，held-out strict-valid/category-match。
 - [x] adapter-backed Eval V1 CLI、artifact provenance 与 CPU-testable runtime boundary。
-- [ ] pilot adapter 在冻结 Eval V1 上对比 Baseline/Fusion。
+- [x] pilot adapter 在冻结 Eval V1 上完成 Baseline/Fusion 公平对比：valid output 0.99、repair attempt 0.06、risk F1 0.894、category macro F1 0.635、effective decision accuracy 0.72。
+- [ ] 安全门禁：当前仍有 1 个 high-risk allow miss；必须先归因并通过定向扩数复评归零。
+- [x] CPU-only adapter 报告诊断器：校验 provenance 并输出安全、格式、benign FP、decision 与 category 错误簇样本 ID。
 - [ ] 根据错误簇定向扩展到 5k–10k，再进入 P5 正式 QLoRA/SFT。
 
 P4 生成与校验：
@@ -230,9 +232,10 @@ python scripts/train_p4_seed_qlora.py --preflight-only
 python scripts/train_p4_seed_qlora.py --overwrite-output
 python scripts/smoke_test_p4_adapter.py
 python scripts/evaluate_p4_adapter.py
+python scripts/analyze_p4_adapter_report.py
 ```
 
-Pilot 不是质量里程碑。先取得 validation loss、adapter strict-output probe
-和随后冻结 Eval V1 的真实误差，再决定扩数方向。
+Pilot 不是质量里程碑。当前格式、repair rate 和整体 F1 已明显改善，但
+high-risk allow miss 尚未归零；下一批数据必须由诊断器报告的真实错误簇驱动。
 
 后续进入 API/SDK、审计、压测和持续红队回归。
