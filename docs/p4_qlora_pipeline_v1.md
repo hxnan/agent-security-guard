@@ -132,6 +132,28 @@ concise JSON result without a traceback. The OOM result retains the audited
 
 The existing smoke pipeline remains independent and backward compatible.
 
+## P4 Targeted Batch V1
+
+The first formal adapter report drives a separate 500-row targeted batch. Its
+50 semantic clusters abstract the observed safety, risk, benign-boundary, and
+taxonomy failure modes without copying frozen requests or sample identifiers.
+Forty clusters generate 400 training rows and ten disjoint families generate
+100 validation rows. The generator rejects exact request or semantic-template
+overlap with Seed V1 and exact request overlap with the frozen Eval V1 bundle.
+
+The committed manifest records five deterministic 100-row batches, exact
+SHA-256 values, aggregate diagnostic counts, and `evaluation_adaptive=true`.
+That disclosure is scientifically material: Eval V1 is now a development
+regression set, not an untouched estimate of generalization. A new held-out
+Eval V2 is required before a P5 quality claim.
+
+```bash
+python scripts/prepare_targeted_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_targeted_train_v1.jsonl \
+  --validation data/val/agent_security_targeted_validation_v1.jsonl
+```
+
 ## Acceptance targets
 
 P4 Seed V1 is the first committed batch, not the final 5k–10k corpus. The pilot

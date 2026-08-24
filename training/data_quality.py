@@ -12,7 +12,7 @@ from typing import Iterable, Literal
 
 from pydantic import ValidationError
 
-from guard.contracts import GuardRequest
+from guard.contracts import GuardContext, GuardRequest
 from training.schema import TrainingExample
 
 
@@ -34,6 +34,25 @@ def request_fingerprint(request: GuardRequest | dict) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def canonical_context(context: GuardContext | dict) -> str:
+    if not isinstance(context, GuardContext):
+        context = GuardContext.model_validate(context)
+    return json.dumps(
+        context.model_dump(mode="json"),
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+@dataclass(frozen=True)
+class EvalIsolationKeys:
+    request_fingerprints: frozenset[str]
+    tool_commands: frozenset[tuple[str, str]]
+    contexts: frozenset[str]
+    semantic_templates: frozenset[str]
 
 
 def load_training_jsonl(
@@ -77,11 +96,14 @@ def load_training_jsonl(
     return examples
 
 
-def load_eval_request_fingerprints(eval_dir: Path | str) -> set[str]:
+def load_eval_isolation_keys(eval_dir: Path | str) -> EvalIsolationKeys:
     eval_dir = Path(eval_dir)
     if not eval_dir.is_dir():
         raise DatasetQualityError(f"Eval directory does not exist: {eval_dir}")
     fingerprints: set[str] = set()
+    tool_commands: set[tuple[str, str]] = set()
+    contexts: set[str] = set()
+    semantic_templates: set[str] = set()
     paths = sorted(eval_dir.glob("*.jsonl"))
     for path in paths:
         try:
@@ -95,8 +117,52 @@ def load_eval_request_fingerprints(eval_dir: Path | str) -> set[str]:
                 continue
             try:
                 raw = json.loads(line)
-                request = raw["request"]
+                request = GuardRequest.model_validate(raw["request"])
+                semantic_template = raw["metadata"]["semantic_template"]
+                if not isinstance(semantic_template, str) or not semantic_template:
+                    raise ValueError("metadata.semantic_template must be non-empty")
                 fingerprints.add(request_fingerprint(request))
+                tool_commands.add((request.type.value, request.command))
+                contexts.add(canonical_context(request.context))
+                semantic_templates.add(semantic_template)
+            except (
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValidationError,
+                ValueError,
+            ) as exc:
+                raise DatasetQualityError(
+                    f"{path.name} line {line_number}: invalid Eval request: {exc}"
+                ) from exc
+    if not fingerprints:
+        raise DatasetQualityError(f"Eval directory contains no requests: {eval_dir}")
+    return EvalIsolationKeys(
+        request_fingerprints=frozenset(fingerprints),
+        tool_commands=frozenset(tool_commands),
+        contexts=frozenset(contexts),
+        semantic_templates=frozenset(semantic_templates),
+    )
+
+
+def load_eval_request_fingerprints(eval_dir: Path | str) -> set[str]:
+    eval_dir = Path(eval_dir)
+    if not eval_dir.is_dir():
+        raise DatasetQualityError(f"Eval directory does not exist: {eval_dir}")
+    fingerprints: set[str] = set()
+    for path in sorted(eval_dir.glob("*.jsonl")):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            raise DatasetQualityError(
+                f"cannot read Eval shard {path}: {exc}"
+            ) from exc
+        for line_number, line in enumerate(lines, 1):
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+                fingerprints.add(request_fingerprint(raw["request"]))
             except (
                 json.JSONDecodeError,
                 KeyError,

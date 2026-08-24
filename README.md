@@ -2,7 +2,7 @@
 
 面向 Agent 工具执行环节的本地轻量级安全护栏。在 Shell、PowerShell、CMD、Python 或其他工具调用真正执行前，对请求做静态风险分析并输出 `allow / review / block`。**项目不会执行待检测命令。**
 
-当前工程阶段是 **P4 Pilot Adapter 评估**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1 的目标 GPU 评估；P4 Seed Dataset V1 已完成首轮 6GB QLoRA pilot 训练与 smoke，正在进入同一冻结 Eval V1 的公平对比。
+当前工程阶段是 **P4 定向数据扩展**。P1 已冻结 100 条 Eval V1；P2 完成 Model-only Baseline V2.1；P3 完成 Rules-first Fusion V1；P4 Seed Dataset V1 已完成首轮 6GB QLoRA pilot、smoke 和正式评估，正在根据真实错误簇构建定向训练批次。
 
 > Eval V1 是 **independent-agent reviewed technical freeze**，不是 human-reviewed 数据集。`data/eval-v1/freeze-manifest.json` 明确记录 `human_reviewed=false`。
 
@@ -18,6 +18,7 @@
 - Rules-only CPU evaluator 与 Fusion target-GPU evaluator。
 - matcher 异常不会产生隐式 allow：异常会被记录；benign shortcut 被抑制，无危险规则可决定时 fail-safe `review`。
 - P4 Seed V1：100 个独立语义簇、1,000 条记录、800/200 train/validation 隔离、10 个可追溯批次。
+- P4 Targeted V1：50 个错误模式驱动但不复制 Eval 请求的独立语义簇、500 条记录、400/100 隔离、5 个可追溯批次。
 - P4 QLoRA Pilot：固定数据哈希预检、6GB GPU 配置、每 epoch 验证、best eval-loss checkpoint、adapter-only provenance 与 held-out smoke probe。
 - P4 Adapter Evaluator：严格校验 pilot manifest/hash 后复用 Baseline V2.1 prompt、一次 repair 和完整 Eval V1 指标。
 
@@ -233,6 +234,19 @@ python scripts/check_training_dataset.py \
 
 生成器不加载模型，也不读取 Eval 标签或用 Eval 请求构造样本。生成结束后才读取冻结 Eval 请求指纹执行泄漏门禁。数据、manifest 和 SHA-256 均已提交，重复生成必须字节一致。
 
+## P4 Targeted Batch V1
+
+首轮 adapter 诊断暴露出一个 high-risk allow miss、三个 risk false negatives、11 个 benign false positives，以及 `sensitive_write` 等类别混淆。Targeted V1 将这些失败抽象为 50 个新的、与 Eval/Seed 请求都不重复的语义簇，重点覆盖：可信或已验签内容被立即执行、伪装成 benchmark 的资源滥用、获批但仍使用更高权限的操作，以及只读网络/服务/本地文件和有边界临时写入等 benign hard negatives。
+
+```bash
+python scripts/prepare_targeted_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_targeted_train_v1.jsonl \
+  --validation data/val/agent_security_targeted_validation_v1.jsonl
+```
+
+数据固定为 400 train / 100 validation，按 40/10 个语义簇隔离；同时拒绝与 Seed V1 的请求或 semantic template 重合，并继续执行冻结 Eval V1 精确请求指纹门禁。manifest 明确记录 `evaluation_adaptive=true`：Eval V1 已参与错误分析，因此后续对它的提升只能作为开发回归证据；P5 最终泛化结论必须由未参与调参的 Eval V2 给出。
+
 ## P4 Seed QLoRA Pilot V1
 
 在盲目扩展到 5k–10k 之前，先用冻结的 800/200 数据完成一次反馈型 pilot。它用于验证正式数据路径、Prompt、验证损失和 adapter 可加载性，不等于 P5 质量验收。
@@ -276,6 +290,6 @@ python scripts/smoke_test_adapter.py
 
 ## 近期路线
 
-1. 分析 pilot adapter 的冻结 Eval V1 错误簇，先消除 high-risk allow miss。
-2. 根据真实错误定向扩展为 5,000–10,000 条版本化语料并复评。
-3. 只在定向数据门禁通过后进入 P5 正式 QLoRA/SFT。
+1. 将 Seed V1 与 Targeted V1 组合为 1,500 条可训练数据并完成第二轮 6GB QLoRA。
+2. 复评安全漏放与分类错误，继续按 500–1,000 条批次定向扩展至 5,000–10,000 条。
+3. 建立未参与调参的 Eval V2，再决定是否进入 P5 正式 QLoRA/SFT。
