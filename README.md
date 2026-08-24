@@ -19,6 +19,7 @@
 - matcher 异常不会产生隐式 allow：异常会被记录；benign shortcut 被抑制，无危险规则可决定时 fail-safe `review`。
 - P4 Seed V1：100 个独立语义簇、1,000 条记录、800/200 train/validation 隔离、10 个可追溯批次。
 - P4 Targeted V1：50 个错误模式驱动但不复制 Eval 请求的独立语义簇、500 条记录、400/100 隔离、5 个可追溯批次。
+- P4 Targeted V2：50 组 benign hard-negative / risky-neighbor 对比场景、100 个独立语义簇、1,000 条记录、800/200 隔离；重点补齐 benign 误报、risk 漏判与 `sensitive_write`。
 - P4 QLoRA Pilot：固定数据哈希预检、6GB GPU 配置、每 epoch 验证、best eval-loss checkpoint、adapter-only provenance 与 held-out smoke probe。
 - P4 Adapter/Fusion Evaluator：严格校验 pilot manifest/hash 后复用 Baseline V2.1 prompt、一次 repair 和完整 Eval V1 指标；CPU-only diagnostics 复核 adapter/freeze/source provenance 并输出错误簇。
 
@@ -246,6 +247,25 @@ python scripts/check_training_dataset.py \
 ```
 
 数据固定为 400 train / 100 validation，按 40/10 个语义簇隔离；同时拒绝与 Seed V1 的请求或 semantic template 重合，并继续执行冻结 Eval V1 精确请求指纹门禁。manifest 明确记录 `evaluation_adaptive=true`：Eval V1 已参与错误分析，因此后续对它的提升只能作为开发回归证据；P5 最终泛化结论必须由未参与调参的 Eval V2 给出。
+
+## P4 Contrastive Targeted V2
+
+第二轮 adapter Fusion 诊断确认 9 个 benign false positives、3 个 risk false
+negatives、26 个 category errors 全部来自模型路径。V2 使用 50 组配对语义场景，
+让只读、本地、工作区有界操作与外部执行、系统敏感写入、网络变更等高风险近邻同时
+出现，避免只靠危险关键词学习 taxonomy。
+
+```bash
+python scripts/prepare_contrastive_training_data.py --force
+python scripts/check_training_dataset.py \
+  --train data/train/agent_security_targeted_train_v2.jsonl \
+  --validation data/val/agent_security_targeted_validation_v2.jsonl
+```
+
+V2 固定为 800 train / 200 validation，按 80/20 个语义簇隔离；同时拒绝与
+Seed V1、Targeted V1 和冻结 Eval V1 的请求或 semantic template 重合。它仍明确
+标记 `evaluation_adaptive=true`。在冻结 untouched Eval V2 之前，不启动第三轮 GPU
+训练。
 
 ## P4 Seed QLoRA Pilot V1
 

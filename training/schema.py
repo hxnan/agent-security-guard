@@ -23,7 +23,7 @@ class TrainingMetadata(BaseModel):
     split: Literal["train", "validation"]
     scenario_kind: Literal["normal", "dangerous", "boundary", "injection"]
     batch_id: str = Field(
-        pattern=r"^p4-(?:seed|targeted)-v1-batch-[0-9]{3}$"
+        pattern=r"^p4-(?:seed-v1|targeted-v[12])-batch-[0-9]{3}$"
     )
     generator_version: str = Field(
         pattern=r"^p4-(?:seed|targeted)-generator-v[0-9]+$"
