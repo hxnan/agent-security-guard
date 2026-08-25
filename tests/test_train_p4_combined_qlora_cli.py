@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from guard.training_config import TrainingConfigError
@@ -27,13 +28,21 @@ class TrainP4CombinedQloraCliTests(unittest.TestCase):
             parse_config(["--max-length", "576"])
 
     def test_cpu_preflight_reports_combined_dataset_before_environment(self):
-        completed = subprocess.run(
-            [sys.executable, "scripts/train_p4_combined_qlora.py", "--preflight-only"],
-            cwd=self.repository_root,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            missing_model = Path(directory) / "missing-model"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/train_p4_combined_qlora.py",
+                    "--preflight-only",
+                    "--model-path",
+                    str(missing_model),
+                ],
+                cwd=self.repository_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
 
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(completed.stderr, "")
@@ -42,6 +51,10 @@ class TrainP4CombinedQloraCliTests(unittest.TestCase):
         self.assertEqual(payload["dataset"]["train_count"], 1200)
         self.assertEqual(payload["dataset"]["validation_count"], 300)
         self.assertEqual(payload["dataset"]["data_version"], "p4-seed-targeted-v2")
+        self.assertFalse(payload["environment"]["ready"])
+        self.assertEqual(
+            payload["environment"]["model_path"], str(missing_model)
+        )
 
 
 if __name__ == "__main__":
