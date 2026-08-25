@@ -71,7 +71,11 @@ class TrainP4SeedQloraCliTests(unittest.TestCase):
         self.assertNotIn("Traceback", completed.stdout)
 
     def test_preflight_reports_fixed_dataset_before_missing_local_environment(self):
-        completed = self.run_cli("--preflight-only")
+        with tempfile.TemporaryDirectory() as directory:
+            missing_model = Path(directory) / "missing-model"
+            completed = self.run_cli(
+                "--preflight-only", "--model-path", str(missing_model)
+            )
 
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(completed.stderr, "")
@@ -84,6 +88,9 @@ class TrainP4SeedQloraCliTests(unittest.TestCase):
             "1897e89d11a730ad0922081bda0cf18da3b643a1fc887c2e27abaa7cc5e96208",
         )
         self.assertFalse(payload["environment"]["ready"])
+        self.assertEqual(
+            payload["environment"]["model_path"], str(missing_model)
+        )
 
     def test_tampered_data_fails_preflight_before_environment_report(self):
         source = (
